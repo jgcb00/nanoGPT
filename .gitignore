@@ -2,3 +2,4 @@ data/fineweb10B/
 __pycache__/
 logs/
 *.out
+env/

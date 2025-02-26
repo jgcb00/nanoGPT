@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from arch.mlp import MLP
-from arch.attention import CausalSelfAttention
+from arch.mixer_attention import CausalSelfAttention
 
 # -----------------------------------------------------------------------------
 # The main GPT-2 model
@@ -28,8 +28,6 @@ class Block(nn.Module):
         x = x + self.attn(F.rms_norm(x, (x.size(-1),)))
         x = x + self.mlp(F.rms_norm(x, (x.size(-1),)))
         return x
-
-
 
 class GPT(nn.Module):
 
@@ -69,3 +67,4 @@ class GPT(nn.Module):
             logits = None
 
         return logits, loss
+    

@@ -50,7 +50,9 @@ class CausalSelfAttention(nn.Module):
         self.rotary = Rotary(self.head_dim)
 
     def forward(self, x):
-        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        # x: (B,T,D) -> y: (B,T,D)
+
+        B, T, _ = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
         q = self.c_q(x).view(B, T, self.n_head, self.head_dim)
         k = self.c_k(x).view(B, T, self.n_head, self.head_dim)
         v = self.c_v(x).view(B, T, self.n_head, self.head_dim)
