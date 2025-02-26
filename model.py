@@ -7,7 +7,6 @@ from arch.mlp import MLP
 from arch.mixer_attention import MixerAttention
     
 class Block(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.attn = MixerAttention(config)
@@ -19,7 +18,6 @@ class Block(nn.Module):
         return x
 
 class GPT(nn.Module):
-
     def __init__(self, config: NanoConfig):
         super().__init__()
         self.config = config
@@ -32,7 +30,6 @@ class GPT(nn.Module):
         self.lm_head.weight.data.zero_()
 
     def forward(self, idx, targets=None, return_logits=True):
-
         # forward the GPT model itself
         x = self.transformer.wte(idx) # token embeddings of shape (b, t, d_model)
         x = F.rms_norm(x, (x.size(-1),))

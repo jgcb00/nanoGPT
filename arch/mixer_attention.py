@@ -48,7 +48,6 @@ class MixerAttention(nn.Module):
 
     def forward(self, x):
         # x: (B,T,D) -> y: (B,T,D)
-
         B, T, _ = x.size() # batch size, sequence length, embedding dimensionality (d_model)
         q = self.c_q(x).view(B, T, self.n_head, self.d_head)
         k = self.c_k(x).view(B, T, self.n_head, self.d_head)
@@ -62,8 +61,7 @@ class MixerAttention(nn.Module):
         return y
     
     
-class DiffCausalSelfAttention(nn.Module):
-
+class MixerDiffAttention(nn.Module):
     def __init__(self, config, layer_depth):
         super().__init__()
         self.n_head = config.n_head
@@ -86,7 +84,8 @@ class DiffCausalSelfAttention(nn.Module):
         self.rotary = Rotary(self.head_dim)
 
     def forward(self, x):
-        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        # x: (B,T,D) -> y: (B,T,D)
+        B, T, _ = x.size() # batch size, sequence length, embedding dimensionality (d_model)
         q = self.c_q(x).view(B, T, 2, self.n_head // 2, self.head_dim)
         k = self.c_k(x).view(B, T, 2, self.n_head // 2 , self.head_dim)
         v = self.c_v(x).view(B, T, self.n_head // 2, 2 * self.head_dim)
@@ -102,8 +101,8 @@ class DiffCausalSelfAttention(nn.Module):
         y1 = y1.transpose(1, 2).contiguous()
         y2 = y2.transpose(1, 2).contiguous()
         
-        lambda_1 = torch.exp(torch.sum(self.lambda_q1 * self.lambda_k1, dim=-1).float()).type_as(query)
-        lambda_2 = torch.exp(torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()).type_as(query)
+        lambda_1 = torch.exp(torch.sum(self.lambda_q1 * self.lambda_k1, dim=-1).float()).type_as(q)
+        lambda_2 = torch.exp(torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()).type_as(q)
         lambda_full = lambda_1 - lambda_2 + self.lambda_init
         
         y = (y1 - lambda_full * y2).contiguous().view_as(x)

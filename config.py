@@ -11,6 +11,7 @@ class NanoConfig:
     n_layer : int = 12
 
     # optim
+    optim : str = "muon" # adam or muon
     batch_size : int = 8*64 # batch size, in sequences, across all devices
     device_batch_size : int = 64 # batch size, in sequences, per device
     sequence_length : int = 1024 # sequence length, in tokens
