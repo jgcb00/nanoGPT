@@ -60,3 +60,52 @@ class MixerAttention(nn.Module):
         y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
         y = self.c_proj(y)
         return y
+    
+    
+class DiffCausalSelfAttention(nn.Module):
+
+    def __init__(self, config, layer_depth):
+        super().__init__()
+        self.n_head = config.n_head
+        self.n_embd = config.n_embd
+        self.head_dim = self.n_embd // self.n_head
+        
+        head_dim = self.head_dim / 2
+        self.lambda_q1 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k1 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_q2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+
+        assert self.n_embd % self.n_head == 0
+        self.c_q = nn.Linear(self.n_embd, self.n_embd, bias=False)
+        self.c_k = nn.Linear(self.n_embd, self.n_embd, bias=False)
+        self.c_v = nn.Linear(self.n_embd, self.n_embd, bias=False)
+        # output projection
+        self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
+        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        self.rotary = Rotary(self.head_dim)
+
+    def forward(self, x):
+        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        q = self.c_q(x).view(B, T, 2, self.n_head // 2, self.head_dim)
+        k = self.c_k(x).view(B, T, 2, self.n_head // 2 , self.head_dim)
+        v = self.c_v(x).view(B, T, self.n_head // 2, 2 * self.head_dim)
+        cos, sin = self.rotary(q)
+        q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) # QK norm suggested by @Grad62304977
+        q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
+        
+        q1, q2 = q[:, :, 0], q[:, :, 1]
+        k1, k2 = k[:, :, 0], k[:, :, 1]
+        
+        y1 = F.scaled_dot_product_attention(q1.transpose(1, 2), k1.transpose(1, 2), v.transpose(1, 2), is_causal=True)
+        y2 = F.scaled_dot_product_attention(q2.transpose(1, 2), k2.transpose(1, 2), v.transpose(1, 2), is_causal=True)
+        y1 = y1.transpose(1, 2).contiguous()
+        y2 = y2.transpose(1, 2).contiguous()
+        
+        lambda_1 = torch.exp(torch.sum(self.lambda_q1 * self.lambda_k1, dim=-1).float()).type_as(query)
+        lambda_2 = torch.exp(torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()).type_as(query)
+        lambda_full = lambda_1 - lambda_2 + self.lambda_init
+        
+        y = (y1 - lambda_full * y2).contiguous().view_as(x)
+        y = self.c_proj(y)
+        return y
