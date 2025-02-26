@@ -18,6 +18,16 @@ from arch.distributed_data_loader import DistributedDataLoader
 from arch.muon import Muon
 from model import GPT
 
+# TODO:
+# config as yaml or something (args?)
+# read optim from config and change it accordingly
+# wandb/tensorboard???
+# check correspondance with megatron : do they have extra hparams ? do we have extra hparams?
+# implement mamba2
+# for hybrid model, add a way to tell which layers are attn
+# add hymba features : local/global attn (why not flex attention?), head regrouping
+# implement gdn
+
 nconfig = NanoConfig()
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
@@ -67,10 +77,15 @@ enable_mem_efficient_sdp(False)
 enable_math_sdp(False)
 
 # init the optimizer(s)
-optimizer1 = torch.optim.Adam([raw_model.transformer.wte.weight], lr=0.3,   betas=(0.9, 0.95), fused=True)
-optimizer2 = torch.optim.Adam([raw_model.lm_head.weight],         lr=0.002, betas=(0.9, 0.95), fused=True)
-optimizer3 = Muon(raw_model.transformer.h.parameters(),           lr=0.02,  momentum=0.95)
-optimizers = [optimizer1, optimizer2, optimizer3]
+if nconfig.optim == 'adam':
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.3, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay) # todo: LR from config!!
+    optimizers = [optimizer]
+else:
+    optimizer1 = torch.optim.Adam([raw_model.transformer.wte.weight], lr=0.3,   betas=(0.9, 0.95), fused=True) # todo: LR from config!! cf Kimi
+    optimizer2 = torch.optim.Adam([raw_model.lm_head.weight],         lr=0.002, betas=(0.9, 0.95), fused=True)
+    optimizer3 = Muon(raw_model.transformer.h.parameters(),           lr=0.02,  momentum=0.95)
+    optimizers = [optimizer1, optimizer2, optimizer3]
+
 # learning rate decay scheduler (linear warmup and warmdown)
 def get_lr(it):
     assert it <= nconfig.num_iterations
