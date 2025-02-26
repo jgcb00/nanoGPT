@@ -1,12 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-#
-# -----------------------------------------------------------------------------
-# PyTorch nn.Module definitions for the GPT-2 model
+
+from config import NanoConfig
 
 class Rotary(torch.nn.Module):
-
     def __init__(self, dim, base=10000):
         super().__init__()
         self.inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
@@ -33,29 +31,28 @@ def apply_rotary_emb(x, cos, sin):
     y2 = x1 * (-sin) + x2 * cos
     return torch.cat([y1, y2], 3).type_as(x)
 
-class CausalSelfAttention(nn.Module):
-
-    def __init__(self, config):
+class MixerAttention(nn.Module):
+    def __init__(self, config: NanoConfig):
         super().__init__()
         self.n_head = config.n_head
-        self.n_embd = config.n_embd
-        self.head_dim = self.n_embd // self.n_head
-        assert self.n_embd % self.n_head == 0
-        self.c_q = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        self.c_k = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        self.c_v = nn.Linear(self.n_embd, self.n_embd, bias=False)
+        self.d_model = config.d_model
+        self.d_head = self.d_model // self.n_head
+        assert self.d_model % self.n_head == 0
+        self.c_q = nn.Linear(self.d_model, self.d_model, bias=False)
+        self.c_k = nn.Linear(self.d_model, self.d_model, bias=False)
+        self.c_v = nn.Linear(self.d_model, self.d_model, bias=False)
         # output projection
-        self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
+        self.c_proj = nn.Linear(self.d_model, self.d_model, bias=False)
         self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
-        self.rotary = Rotary(self.head_dim)
+        self.rotary = Rotary(self.d_head)
 
     def forward(self, x):
         # x: (B,T,D) -> y: (B,T,D)
 
-        B, T, _ = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
-        q = self.c_q(x).view(B, T, self.n_head, self.head_dim)
-        k = self.c_k(x).view(B, T, self.n_head, self.head_dim)
-        v = self.c_v(x).view(B, T, self.n_head, self.head_dim)
+        B, T, _ = x.size() # batch size, sequence length, embedding dimensionality (d_model)
+        q = self.c_q(x).view(B, T, self.n_head, self.d_head)
+        k = self.c_k(x).view(B, T, self.n_head, self.d_head)
+        v = self.c_v(x).view(B, T, self.n_head, self.d_head)
         cos, sin = self.rotary(q)
         q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) # QK norm suggested by @Grad62304977
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)

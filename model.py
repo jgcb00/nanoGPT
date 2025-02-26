@@ -1,27 +1,16 @@
-from dataclasses import dataclass
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer_attention import CausalSelfAttention
-
-# -----------------------------------------------------------------------------
-# The main GPT-2 model
-
-@dataclass
-class GPTConfig:
-    vocab_size : int = 50304
-    n_layer : int = 12
-    n_head : int = 6 # head dim 128 suggested by @Grad62304977
-    n_embd : int = 768
-    
+from arch.mixer_attention import MixerAttention
     
 class Block(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.attn = CausalSelfAttention(config)
+        self.attn = MixerAttention(config)
         self.mlp = MLP(config)
 
     def forward(self, x):
@@ -31,21 +20,21 @@ class Block(nn.Module):
 
 class GPT(nn.Module):
 
-    def __init__(self, config):
+    def __init__(self, config: NanoConfig):
         super().__init__()
         self.config = config
 
         self.transformer = nn.ModuleDict(dict(
-            wte = nn.Embedding(config.vocab_size, config.n_embd),
+            wte = nn.Embedding(config.vocab_size, config.d_model),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
         ))
-        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
         self.lm_head.weight.data.zero_()
 
     def forward(self, idx, targets=None, return_logits=True):
 
         # forward the GPT model itself
-        x = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
+        x = self.transformer.wte(idx) # token embeddings of shape (b, t, d_model)
         x = F.rms_norm(x, (x.size(-1),))
         for block in self.transformer.h:
             x = block(x)

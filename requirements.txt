@@ -4,3 +4,4 @@ torch
 huggingface-hub
 wandb
 causal-conv1d
+einops
