@@ -71,7 +71,7 @@ x, y = train_loader.next_batch()
 num_vocab = 50304
 model = GPT(nconfig)
 model = model.cuda()
-#model = torch.compile(model)
+model = torch.compile(model)
 # here we wrap model into DDP container
 model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module # always contains the "raw" unwrapped model
