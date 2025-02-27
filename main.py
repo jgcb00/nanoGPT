@@ -96,7 +96,7 @@ match nconfig.optim:
         optimizer = AdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
         optimizers = [optimizer]
     case 'spam':
-        from arch.spam import SPAMAdamW
+        from arch.optim.spam import SPAMAdamW
         optimizer = SPAMAdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
         optimizers = [optimizer]
     case 'muon':
