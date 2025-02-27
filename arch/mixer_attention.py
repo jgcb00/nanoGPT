@@ -62,11 +62,11 @@ class MixerAttention(nn.Module):
     
     
 class MixerDiffAttention(nn.Module):
-    def __init__(self, config, layer_depth):
+    def __init__(self, config: NanoConfig, layer_depth: int):
         super().__init__()
         self.n_head = config.n_head
-        self.n_embd = config.n_embd
-        self.head_dim = self.n_embd // self.n_head
+        self.d_model = config.d_model
+        self.head_dim = self.d_model // self.n_head
         
         head_dim = self.head_dim / 2
         self.lambda_q1 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
@@ -74,12 +74,12 @@ class MixerDiffAttention(nn.Module):
         self.lambda_q2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
         self.lambda_k2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
 
-        assert self.n_embd % self.n_head == 0
-        self.c_q = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        self.c_k = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        self.c_v = nn.Linear(self.n_embd, self.n_embd, bias=False)
+        assert self.d_model % self.n_head == 0
+        self.c_q = nn.Linear(self.d_model, self.d_model, bias=False)
+        self.c_k = nn.Linear(self.d_model, self.d_model, bias=False)
+        self.c_v = nn.Linear(self.d_model, self.d_model, bias=False)
         # output projection
-        self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
+        self.c_proj = nn.Linear(self.d_model, self.d_model, bias=False)
         self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
         self.rotary = Rotary(self.head_dim)
 
