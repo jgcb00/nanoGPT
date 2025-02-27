@@ -1,1 +1,1 @@
-python data/cached_fineweb10B.py 10 # 10=1B tokens
+python data/cached_fineweb10B.py 50 # 10=1B tokens
