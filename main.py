@@ -206,7 +206,7 @@ for step in range(nconfig.num_iterations + 1):
     for p in model.parameters():
         p.grad /= train_accumulation_steps
     # clip those gradients
-    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=nconfig.grad_norm_clip, foreach=True)
+    #grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=nconfig.grad_norm_clip, foreach=True)
     # step the optimizers and schedulers
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
