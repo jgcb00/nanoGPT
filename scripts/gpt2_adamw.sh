@@ -13,7 +13,7 @@ torchrun --nproc_per_node=1 main.py \
     --device_batch_size 32 \
     --learning_rate 1.8e-3 \
     --num_iterations 4578 \
-    --warmup_iters 200 \
+    --warmup_iters 0 \
     --warmdown_iters 1308 \
     --weight_decay 0.1 \
     --grad_norm_clip 1.0 \
