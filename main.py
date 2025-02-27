@@ -6,6 +6,7 @@ with open(sys.argv[0]) as f:
 import uuid
 import glob
 import time
+import wandb
 
 import numpy as np
 import torch
@@ -122,6 +123,8 @@ if master_process:
         result = subprocess.run(['nvidia-smi'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         f.write(f'{result.stdout}\n')
         f.write('='*100 + '\n')
+    
+    wandb.init(project='dragon', config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
 
 training_time_ms = 0
 # start the clock
@@ -161,6 +164,7 @@ for step in range(nconfig.num_iterations + 1):
             print(f'step:{step}/{nconfig.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms')
             with open(logfile, "a") as f:
                 f.write(f'step:{step}/{nconfig.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms\n')
+            wandb.log({'val_loss': val_loss}, step=step)
         # start the clock again
         torch.cuda.synchronize()
         t0 = time.time()
@@ -215,6 +219,6 @@ for step in range(nconfig.num_iterations + 1):
         print(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms")
         with open(logfile, "a") as f:
             f.write(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms\n")
-
+        wandb.log({'train_loss': train_loss.item(), 'step_avg_time': approx_time/timed_steps, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)}}, step=step)
 if master_process:
     print(f"peak memory consumption: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
