@@ -5,7 +5,7 @@ import argparse
 class NanoConfig:
     # model
     model : str = "gpt" #gpt or dragon
-    run_name : str = None
+    run_name : str = ""
     
     # arch - general
     d_model : int = 768

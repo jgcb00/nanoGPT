@@ -8,7 +8,10 @@ export WANDB_MODE=offline
 RUN_NAME=${1}
 NUM_GPUS=${2:-1}
 
+echo "RUN_NAME: $RUN_NAME"
+
 torchrun --nproc_per_node=$NUM_GPUS main.py \
+    --run_name $RUN_NAME \
     --d_model 768 \
     --n_head 12 \
     --n_layer 12 \

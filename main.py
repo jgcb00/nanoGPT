@@ -34,7 +34,7 @@ def parse_args():
 
 args = parse_args()
 nconfig = NanoConfig.from_args(args)
-assert nconfig.run_name is not None, "Please provide a run name for this training run."
+assert nconfig.run_name != "", "Please provide a run name for this training run."
 
 # print the config
 print(nconfig)
