@@ -3,6 +3,10 @@ import argparse
 
 @dataclass
 class NanoConfig:
+    # model
+    model : str = "gpt" #gpt or dragon
+    run_name : str = None
+    
     # arch - general
     d_model : int = 768
     n_head : int = 6 # head dim 128 suggested by @Grad62304977

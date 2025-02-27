@@ -2,8 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from flash_attn import flash_attn_func
-
+import flash_attn
+import flex_head_fa
 from config import NanoConfig
+import math
 
 class Rotary(torch.nn.Module):
     def __init__(self, dim, base=10000):
@@ -58,17 +60,18 @@ class MixerAttention(nn.Module):
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         #y = F.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), is_causal=True)
         #y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
-        y = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True)
+        y = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True)
         y = y.contiguous().view_as(x)
         y = self.c_proj(y)
         return y
     
 class MixerDiffAttention(nn.Module):
-    def __init__(self, config: NanoConfig, layer_depth: int):
+    def __init__(self, config: NanoConfig, layer_depth: int = 0):
         super().__init__()
         self.n_head = config.n_head
         self.d_model = config.d_model
         self.head_dim = self.d_model // self.n_head
+        self.lambda_init = 0.8 - 0.6 * math.exp(-0.3 * layer_depth)
         
         head_dim = self.head_dim / 2
         self.lambda_q1 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
@@ -102,11 +105,11 @@ class MixerDiffAttention(nn.Module):
         #y2 = F.scaled_dot_product_attention(q2.transpose(1, 2), k2.transpose(1, 2), v.transpose(1, 2), is_causal=True)
         #y1 = y1.transpose(1, 2).contiguous()
         #y2 = y2.transpose(1, 2).contiguous()
-        y1 = flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True)
-        y2 = flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True)
+        y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True)
+        y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True)
         
-        lambda_1 = torch.exp(torch.sum(self.lambda_q1 * self.lambda_k1, dim=-1).float()).type_as(q)
-        lambda_2 = torch.exp(torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()).type_as(q)
+        lambda_1 = torch.exp(torch.sum(self.lambda_q1 * self.lambda_k1, dim=-1).float()).type_as(y1)
+        lambda_2 = torch.exp(torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()).type_as(y2)
         lambda_full = lambda_1 - lambda_2 + self.lambda_init
         
         y = (y1 - lambda_full * y2).contiguous().view_as(x)

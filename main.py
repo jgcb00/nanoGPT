@@ -17,8 +17,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from config import NanoConfig
 from arch.distributed_data_loader import DistributedDataLoader
-from arch.muon import Muon
-from arch.model import GPT
 
 # TODO:
 # checkpoint and resume system?
@@ -36,6 +34,7 @@ def parse_args():
 
 args = parse_args()
 nconfig = NanoConfig.from_args(args)
+assert nconfig.run_name is not None, "Please provide a run name for this training run."
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
@@ -69,7 +68,17 @@ x, y = train_loader.next_batch()
 # there are only 50257 unique GPT-2 tokens; we extend to nearest multiple of 128 for efficiency. suggested to me by @Grad62304977.
 # this originates from Karpathy's experiments.
 num_vocab = 50304
-model = GPT(nconfig)
+match args.model:
+    case 'gpt':
+        from arch.gpt import GPT
+        model = GPT(nconfig)
+    case 'dragon':
+        from arch.dragon import Dragon
+        model = Dragon(nconfig)
+        pass
+    case _:
+        raise ValueError(f"Model {args.model} not supported")        
+
 model = model.cuda()
 model = torch.compile(model, dynamic=False)
 # here we wrap model into DDP container
@@ -78,16 +87,20 @@ raw_model = model.module # always contains the "raw" unwrapped model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
 # init the optimizer(s)
-if nconfig.optim == 'adamw':
-    optimizer = torch.optim.Adam(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
-    optimizers = [optimizer]
-elif nconfig.optim == 'muon':
-    optimizer1 = torch.optim.Adam([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), fused=True)
-    optimizer2 = torch.optim.Adam([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), fused=True)
-    optimizer3 = Muon(raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
-    optimizers = [optimizer1, optimizer2, optimizer3]
-else:
-    raise ValueError(f"Optimizer {nconfig.optim} not supported")
+match nconfig.optim:
+    case 'adamw':
+        from torch.optim import AdamW
+        optimizer = AdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
+        optimizers = [optimizer]
+    case 'muon':
+        from torch.optim import Adam
+        from arch.muon import Muon
+        optimizer1 = Adam([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), fused=True)
+        optimizer2 = Adam([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), fused=True)
+        optimizer3 = Muon(raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
+        optimizers = [optimizer1, optimizer2, optimizer3]
+    case _:
+        raise ValueError(f"Optimizer {nconfig.optim} not supported")
 
 # learning rate decay scheduler (linear warmup and warmdown)
 def get_lr(it):
@@ -125,7 +138,7 @@ if master_process:
         f.write('='*100 + '\n')
     
     #wandb.init(project='dragon', config={**varje ps(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
-    wandb.init(project='dragon', config={**vars(nconfig)})
+    wandb.init(project='nanoGPT', name=nconfig.run_name, config={**vars(nconfig)})
 
 training_time_ms = 0
 # start the clock

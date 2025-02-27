@@ -4,7 +4,11 @@
 export CUDA_DEVICE_MAX_CONNECTIONS=1.8
 export WANDB_MODE=offline
 
-torchrun --nproc_per_node=1 main.py \
+# Usage: bash gpt2_adamw.sh [RUN_NAME] [NUM_GPUS=1]
+RUN_NAME=${1}
+NUM_GPUS=${2:-1}
+
+torchrun --nproc_per_node=$NUM_GPUS main.py \
     --d_model 768 \
     --n_head 12 \
     --n_layer 12 \

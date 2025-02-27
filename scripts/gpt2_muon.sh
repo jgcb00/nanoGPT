@@ -2,8 +2,14 @@
 
 #export CUDA_VISIBLE_DEVICES=0
 export CUDA_DEVICE_MAX_CONNECTIONS=1
+export WANDB_MODE=offline
 
-torchrun --nproc_per_node=1 main.py \
+# Usage: bash gpt2_muon.sh [RUN_NAME] [NUM_GPUS=1]
+RUN_NAME=${1}
+NUM_GPUS=${2:-1}
+
+torchrun --nproc_per_node=$NUM_GPUS main.py \
+    --run_name $RUN_NAME \
     --d_model 768 \
     --n_head 12 \
     --n_layer 12 \
