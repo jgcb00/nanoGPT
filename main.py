@@ -22,6 +22,7 @@ from arch.model import GPT
 # TODO:
 # lr from config!!!
 # wandb/tensorboard???
+# flash_attn for diffattention
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams? +SPAM
 # implement mamba2
 # for hybrid model, add a way to tell which layers are attn

@@ -3,5 +3,6 @@ tqdm
 torch
 huggingface-hub
 wandb
-causal-conv1d
 einops
+ninja
+flash-attn
