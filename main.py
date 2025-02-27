@@ -20,8 +20,7 @@ from arch.muon import Muon
 from arch.model import GPT
 
 # TODO:
-# config as yaml or something (args?)
-# read optim from config and change it accordingly
+# lr from config!!!
 # wandb/tensorboard???
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams? +SPAM
 # implement mamba2
