@@ -21,7 +21,6 @@ from arch.muon import Muon
 from arch.model import GPT
 
 # TODO:
-# wandb/tensorboard???
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams? +SPAM
 # implement mamba2
 # implement gdn
@@ -204,6 +203,8 @@ for step in range(nconfig.num_iterations + 1):
             loss.backward() # just sync on the last step
     for p in model.parameters():
         p.grad /= train_accumulation_steps
+    # clip those gradients
+    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=nconfig.grad_norm_clip, foreach=True)
     # step the optimizers and schedulers
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
