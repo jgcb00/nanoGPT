@@ -140,7 +140,7 @@ if master_process:
         f.write(f'{result.stdout}\n')
         f.write('='*100 + '\n')
     
-    #wandb.init(project='dragon', config={**varje ps(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
+    #wandb.init(project='dragon', config={**varje ps(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')#todo
     wandb.init(project='nanoGPT', name=nconfig.run_name, config={**vars(nconfig)})
 
 training_time_ms = 0
@@ -238,6 +238,6 @@ for step in range(nconfig.num_iterations + 1):
         print(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms")
         with open(logfile, "a") as f:
             f.write(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms\n")
-        wandb.log({'train_loss': train_loss.item(), 'step_avg_time': approx_time/timed_steps, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)}}, step=step)
+        wandb.log({'train_loss': train_loss.item(), 'step_avg_time': approx_time/timed_steps, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)}}, step=step)#todo
 if master_process:
     print(f"peak memory consumption: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
