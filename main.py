@@ -48,6 +48,7 @@ device = f'cuda:{ddp_local_rank}'
 torch.cuda.set_device(device)
 print(f"using device: {device}")
 master_process = (ddp_rank == 0) # this process will do logging, checkpointing etc.
+torch._dynamo.config.optimize_ddp=False
 
 # convenience variables
 B, T = nconfig.device_batch_size, nconfig.sequence_length
