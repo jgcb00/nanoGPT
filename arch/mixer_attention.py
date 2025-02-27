@@ -63,7 +63,6 @@ class MixerAttention(nn.Module):
         y = self.c_proj(y)
         return y
     
-    
 class MixerDiffAttention(nn.Module):
     def __init__(self, config: NanoConfig, layer_depth: int):
         super().__init__()
@@ -99,10 +98,12 @@ class MixerDiffAttention(nn.Module):
         q1, q2 = q[:, :, 0], q[:, :, 1]
         k1, k2 = k[:, :, 0], k[:, :, 1]
         
-        y1 = F.scaled_dot_product_attention(q1.transpose(1, 2), k1.transpose(1, 2), v.transpose(1, 2), is_causal=True)
-        y2 = F.scaled_dot_product_attention(q2.transpose(1, 2), k2.transpose(1, 2), v.transpose(1, 2), is_causal=True)
-        y1 = y1.transpose(1, 2).contiguous()
-        y2 = y2.transpose(1, 2).contiguous()
+        #y1 = F.scaled_dot_product_attention(q1.transpose(1, 2), k1.transpose(1, 2), v.transpose(1, 2), is_causal=True)
+        #y2 = F.scaled_dot_product_attention(q2.transpose(1, 2), k2.transpose(1, 2), v.transpose(1, 2), is_causal=True)
+        #y1 = y1.transpose(1, 2).contiguous()
+        #y2 = y2.transpose(1, 2).contiguous()
+        y1 = flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True)
+        y2 = flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True)
         
         lambda_1 = torch.exp(torch.sum(self.lambda_q1 * self.lambda_k1, dim=-1).float()).type_as(q)
         lambda_2 = torch.exp(torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()).type_as(q)
