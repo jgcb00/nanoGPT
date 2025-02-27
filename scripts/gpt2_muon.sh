@@ -13,7 +13,7 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --d_model 768 \
     --n_head 12 \
     --n_layer 12 \
-    --optim muon \
+    --optim upgraded-muon \
     --batch_size 512 \
     --device_batch_size 16 \
     --learning_rate 0.02 \

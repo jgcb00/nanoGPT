@@ -15,10 +15,10 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --d_model 768 \
     --n_head 12 \
     --n_layer 12 \
-    --optim spam \
+    --optim stable-spam \
     --batch_size 512 \
     --device_batch_size 32 \
-    --learning_rate 1.8e-3 \
+    --learning_rate 8e-4 \ #comes from the stableSpam paper
     --num_iterations 1000 \
     --warmup_iters 200 \
     --warmdown_iters 1308 \

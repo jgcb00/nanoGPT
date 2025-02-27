@@ -104,9 +104,39 @@ match nconfig.optim:
         from arch.optim.muon import Muon
         optimizer1 = Adam([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), fused=True)
         optimizer2 = Adam([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), fused=True)
+        optimizers = [optimizer1, optimizer2]
+        match nconfig.model:
+            case 'gpt':
+                match nconfig.attn_type:
+                    case 'normal':
+                        optimizer3 = Muon(raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
+                        optimizers.append(optimizer3)
+                    case 'diff':
+                        optimizer3 = Muon([
+                            raw_model.transformer.h.mlp.parameters(), 
+                            raw_model.transformer.h.attn.c_q.parameters(),
+                            raw_model.transformer.h.attn.c_k.parameters(),
+                            raw_model.transformer.h.attn.c_v.parameters(),
+                            ], lr=nconfig.learning_rate, momentum=0.95)
+                        optimizers.append(optimizer3)
+                        optimizer4 = AdamW([
+                            raw_model.transformer.h.attn.lambda_q1,
+                            raw_model.transformer.h.attn.lambda_k1,
+                            raw_model.transformer.h.attn.lambda_q2,
+                            raw_model.transformer.h.attn.lambda_k2,
+                            ], lr=1.8e-3, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
+                        optimizers.append(optimizer4)
+            case 'dragon':
+                pass
+    case 'upgraded-muon':
+        from arch.optim.spam import SPAMAdamW
+        from arch.optim.muon import Muon
+        optimizer1 = SPAMAdamW([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), weight_decay=0.01)
+        optimizer2 = SPAMAdamW([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), weight_decay=0.01)
         optimizer3 = Muon(raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
         optimizers = [optimizer1, optimizer2, optimizer3]
-    case 'stableSPAM':
+        
+    case 'stable-spam':
         from arch.optim.stableSPAM import StableSPAM
         optimizer = StableSPAM(model.parameters(), lr=nconfig.learning_rate, weight_decay=nconfig.weight_decay)
         optimizers = [optimizer]

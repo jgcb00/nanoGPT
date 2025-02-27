@@ -12,6 +12,7 @@ class NanoConfig:
     n_head : int = 6 # head dim 128 suggested by @Grad62304977
     n_layer : int = 12
     expand_factor : int = 1 # expand factor for Mamba/Dragon
+    attn_type : str = "normal" # normal, diff
 
     # optim
     optim : str = "muon" # adamw, spam, or muon

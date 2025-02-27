@@ -9,7 +9,13 @@ from arch.mixer_attention import Attention, DiffAttention
 class Block(nn.Module):
     def __init__(self, config, layer_depth: int = 0):
         super().__init__()
-        self.attn = DiffAttention(config, layer_depth)
+        match config.attn_type:
+            case "normal":
+                self.attn = Attention(config, layer_depth)
+            case "diff":
+                self.attn = DiffAttention(config, layer_depth)
+            case _:
+                raise ValueError(f"Unknown attention type {config.attn_type}")
         self.mlp = MLP(config)
 
     def forward(self, x):
