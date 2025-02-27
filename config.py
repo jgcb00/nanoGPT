@@ -14,7 +14,7 @@ class NanoConfig:
     expand_factor : int = 1 # expand factor for Mamba/Dragon
 
     # optim
-    optim : str = "muon" # adamw or muon
+    optim : str = "muon" # adamw, spam, or muon
     batch_size : int = 8*64 # batch size, in sequences, across all devices
     device_batch_size : int = 64 # batch size, in sequences, per device
     num_iterations : int = 1000 # number of iterations to run
