@@ -16,9 +16,9 @@ class NanoConfig:
     learning_rate : float = 1e-4
     warmup_iters : int = 0
     warmdown_iters : int = 1308 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
-    weight_decay : float = 0
+    weight_decay : float = 0.
     grad_norm_clip : float = 1.0
-    
+
     # data
     vocab_size : int = 50304
     sequence_length : int = 1024 # sequence length, in tokens
