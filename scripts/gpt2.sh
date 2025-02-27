@@ -1,7 +1,6 @@
 #!/bin/bash
 
 export CUDA_VISIBLE_DEVICES=0
-export TORCH_CUDNN_SDPA_ENABLED=1
 
 torchrun --nproc_per_node=1 main.py \
     # arch - general
