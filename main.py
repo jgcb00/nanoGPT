@@ -16,13 +16,13 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from config import NanoConfig
 from arch.distributed_data_loader import DistributedDataLoader
 from arch.muon import Muon
-from model import GPT
+from arch.model import GPT
 
 # TODO:
 # config as yaml or something (args?)
 # read optim from config and change it accordingly
 # wandb/tensorboard???
-# check correspondance with megatron : do they have extra hparams ? do we have extra hparams?
+# check correspondance with megatron : do they have extra hparams ? do we have extra hparams? +SPAM
 # implement mamba2
 # for hybrid model, add a way to tell which layers are attn
 # add hymba features : local/global attn (why not flex attention?), head regrouping
