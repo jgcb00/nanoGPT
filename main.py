@@ -124,7 +124,8 @@ if master_process:
         f.write(f'{result.stdout}\n')
         f.write('='*100 + '\n')
     
-    wandb.init(project='dragon', config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
+    #wandb.init(project='dragon', config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
+    wandb.init(project='dragon', config={**vars(nconfig)})
 
 training_time_ms = 0
 # start the clock
