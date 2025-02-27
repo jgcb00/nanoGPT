@@ -37,6 +37,9 @@ def parse_args():
 args = parse_args()
 nconfig = NanoConfig.from_args(args)
 
+# print the config
+print(nconfig)
+
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
 dist.init_process_group(backend='nccl')
