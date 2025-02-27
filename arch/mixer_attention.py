@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from flash_attn import flash_attn_func
+#from flash_attn import flash_attn_func
 
 from config import NanoConfig
 
@@ -56,10 +56,10 @@ class MixerAttention(nn.Module):
         cos, sin = self.rotary(q)
         q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) # QK norm suggested by @Grad62304977
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
-        #y = F.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), is_causal=True)
-        #y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
-        y = flash_attn_func(q, k, v, causal=True)
-        y = y.contiguous().view_as(x)
+        y = F.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), is_causal=True)
+        y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
+        #y = flash_attn_func(q, k, v, causal=True)
+        #y = y.contiguous().view_as(x)
         y = self.c_proj(y)
         return y
     
