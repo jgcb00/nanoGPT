@@ -101,14 +101,15 @@ match nconfig.optim:
         optimizers = [optimizer]
     case 'muon':
         from torch.optim import Adam
-        from arch.muon import Muon
+        from arch.optim.muon import Muon
         optimizer1 = Adam([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), fused=True)
         optimizer2 = Adam([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), fused=True)
         optimizer3 = Muon(raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
         optimizers = [optimizer1, optimizer2, optimizer3]
     case 'stableSPAM':
         from arch.optim.stableSPAM import StableSPAM
-        optimizer = StableSPAM(model.parameters(), lr=nconfig.learning_rate)
+        optimizer = StableSPAM(model.parameters(), lr=nconfig.learning_rate, weight_decay=nconfig.weight_decay)
+        optimizers = [optimizer]
     case _:
         raise ValueError(f"Optimizer {nconfig.optim} not supported")
 
