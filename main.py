@@ -23,9 +23,9 @@ from arch.model import GPT
 # wandb/tensorboard???
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams? +SPAM
 # implement mamba2
+# implement gdn
 # for hybrid model, add a way to tell which layers are attn
 # add hymba features : local/global attn (why not flex attention?), head regrouping
-# implement gdn
 # next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
 
 def parse_args():
