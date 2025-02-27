@@ -1,5 +1,6 @@
 import os
 import sys
+import argparse
 with open(sys.argv[0]) as f:
     code = f.read() # read the code of this file ASAP, for logging
 import uuid
@@ -28,7 +29,13 @@ from arch.model import GPT
 # add hymba features : local/global attn (why not flex attention?), head regrouping
 # implement gdn
 
-nconfig = NanoConfig()
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser = NanoConfig.add_args(parser)
+    return parser.parse_args()
+
+args = parse_args()
+nconfig = NanoConfig.from_args(args)
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
