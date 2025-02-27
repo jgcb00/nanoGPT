@@ -10,7 +10,7 @@ torchrun --nproc_per_node=1 main.py \
     --n_layer 12 \
     --optim adamw \
     --batch_size 512 \
-    --device_batch_size 32 \
+    --device_batch_size 64 \
     --learning_rate 1.8e-3 \
     --num_iterations 4578 \
     --warmup_iters 0 \
