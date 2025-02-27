@@ -17,7 +17,7 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --n_layer 12 \
     --optim adamw \
     --batch_size 512 \
-    --device_batch_size 64 \
+    --device_batch_size 32 \
     --learning_rate 1.8e-3 \
     --num_iterations 4578 \
     --warmup_iters 200 \
