@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #export CUDA_VISIBLE_DEVICES=0
-export CUDA_DEVICE_MAX_CONNECTIONS=1.8
+export CUDA_DEVICE_MAX_CONNECTIONS=1
 export WANDB_MODE=offline
 
 torchrun --nproc_per_node=1 main.py \
