@@ -95,6 +95,10 @@ match nconfig.optim:
         from torch.optim import AdamW
         optimizer = AdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
         optimizers = [optimizer]
+    case 'spam':
+        from arch.spam import SPAMAdamW
+        optimizer = SPAMAdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
+        optimizers = [optimizer]
     case 'muon':
         from torch.optim import Adam
         from arch.muon import Muon

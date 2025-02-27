@@ -13,7 +13,7 @@ class NanoConfig:
     n_layer : int = 12
 
     # optim
-    optim : str = "muon" # adamw or muon
+    optim : str = "muon" # adamw, spam, or muon
     batch_size : int = 8*64 # batch size, in sequences, across all devices
     device_batch_size : int = 64 # batch size, in sequences, per device
     num_iterations : int = 4578 # number of iterations to run
