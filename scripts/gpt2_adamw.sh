@@ -8,8 +8,6 @@ export WANDB_MODE=offline
 RUN_NAME=${1}
 NUM_GPUS=${2:-1}
 
-echo "RUN_NAME: $RUN_NAME"
-
 torchrun --nproc_per_node=$NUM_GPUS main.py \
     --run_name $RUN_NAME \
     --d_model 768 \
@@ -17,10 +15,10 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --n_layer 12 \
     --optim adamw \
     --batch_size 512 \
-    --device_batch_size 64 \
+    --device_batch_size 32 \
     --learning_rate 1.8e-3 \
-    --num_iterations 4578 \
-    --warmup_iters 200 \
+    --num_iterations 1000 \
+    --warmup_iters 0 \
     --warmdown_iters 1308 \
     --weight_decay 0.1 \
     --sequence_length 1024 \

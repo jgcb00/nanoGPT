@@ -102,6 +102,9 @@ match nconfig.optim:
         optimizer2 = Adam([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), fused=True)
         optimizer3 = Muon(raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
         optimizers = [optimizer1, optimizer2, optimizer3]
+    case 'stableSPAM':
+        from arch.optim.stableSPAM import StableSPAM
+        optimizer = StableSPAM(model.parameters(), lr=nconfig.learning_rate)
     case _:
         raise ValueError(f"Optimizer {nconfig.optim} not supported")
 

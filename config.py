@@ -11,12 +11,13 @@ class NanoConfig:
     d_model : int = 768
     n_head : int = 6 # head dim 128 suggested by @Grad62304977
     n_layer : int = 12
+    expand_factor : int = 1 # expand factor for Mamba/Dragon
 
     # optim
     optim : str = "muon" # adamw or muon
     batch_size : int = 8*64 # batch size, in sequences, across all devices
     device_batch_size : int = 64 # batch size, in sequences, per device
-    num_iterations : int = 4578 # number of iterations to run
+    num_iterations : int = 1000 # number of iterations to run
     learning_rate : float = 1e-4
     warmup_iters : int = 0
     warmdown_iters : int = 1308 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule

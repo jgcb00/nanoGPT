@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from flash_attn import flash_attn_func
 import flash_attn
 import flex_head_fa
 from config import NanoConfig
@@ -35,18 +34,15 @@ def apply_rotary_emb(x, cos, sin):
     return torch.cat([y1, y2], 3).type_as(x)
 
 class MixerAttention(nn.Module):
-    def __init__(self, config: NanoConfig):
+    def __init__(self, config: NanoConfig, layer_depth: int = 0):
         super().__init__()
         self.n_head = config.n_head
         self.d_model = config.d_model
-        self.d_head = self.d_model // self.n_head
+        self.d_head = self.d_model // self.n_head * config.expand_factor
         assert self.d_model % self.n_head == 0
-        self.c_q = nn.Linear(self.d_model, self.d_model, bias=False)
-        self.c_k = nn.Linear(self.d_model, self.d_model, bias=False)
-        self.c_v = nn.Linear(self.d_model, self.d_model, bias=False)
-        # output projection
-        self.c_proj = nn.Linear(self.d_model, self.d_model, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        self.c_q = nn.Linear(self.d_model, config.expand_factor*self.d_model, bias=False)
+        self.c_k = nn.Linear(self.d_model, config.expand_factor*self.d_model, bias=False)
+        self.c_v = nn.Linear(self.d_model, config.expand_factor*self.d_model, bias=False)
         self.rotary = Rotary(self.d_head)
 
     def forward(self, x):
@@ -62,41 +58,54 @@ class MixerAttention(nn.Module):
         #y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
         y = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True)
         y = y.contiguous().view_as(x)
+        return y
+    
+class Attention(MixerAttention):
+    def __init__(self, config, layer_depth: int = 0):
+        super().__init__(config, layer_depth=layer_depth)
+        
+        # output projection
+        self.c_proj = nn.Linear(config.expand_factor * self.d_model, self.d_model, bias=False)
+        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+    
+    def forward(self, x):
+        y = super().forward(x)
         y = self.c_proj(y)
         return y
+    
     
 class MixerDiffAttention(nn.Module):
     def __init__(self, config: NanoConfig, layer_depth: int = 0):
         super().__init__()
         self.n_head = config.n_head
         self.d_model = config.d_model
-        self.head_dim = self.d_model // self.n_head
+        self.head_dim = self.d_model // self.n_head * config.expand_factor
         self.lambda_init = 0.8 - 0.6 * math.exp(-0.3 * layer_depth)
         
-        head_dim = self.head_dim / 2
+        head_dim = self.head_dim // 2
         self.lambda_q1 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
         self.lambda_k1 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
         self.lambda_q2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
         self.lambda_k2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
 
         assert self.d_model % self.n_head == 0
-        self.c_q = nn.Linear(self.d_model, self.d_model, bias=False)
-        self.c_k = nn.Linear(self.d_model, self.d_model, bias=False)
-        self.c_v = nn.Linear(self.d_model, self.d_model, bias=False)
-        # output projection
-        self.c_proj = nn.Linear(self.d_model, self.d_model, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        self.c_q = nn.Linear(self.d_model, config.expand_factor * self.d_model, bias=False)
+        self.c_k = nn.Linear(self.d_model, config.expand_factor * self.d_model, bias=False)
+        self.c_v = nn.Linear(self.d_model, config.expand_factor * self.d_model, bias=False)
         self.rotary = Rotary(self.head_dim)
 
     def forward(self, x):
         # x: (B,T,D) -> y: (B,T,D)
         B, T, _ = x.size() # batch size, sequence length, embedding dimensionality (d_model)
-        q = self.c_q(x).view(B, T, 2, self.n_head // 2, self.head_dim)
-        k = self.c_k(x).view(B, T, 2, self.n_head // 2 , self.head_dim)
+        q = self.c_q(x).view(B, T, self.n_head, self.head_dim)
+        k = self.c_k(x).view(B, T, self.n_head, self.head_dim)
         v = self.c_v(x).view(B, T, self.n_head // 2, 2 * self.head_dim)
         cos, sin = self.rotary(q)
         q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) # QK norm suggested by @Grad62304977
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
+        
+        q = q.view(B, T, 2, self.n_head // 2, self.head_dim)
+        k = k.view(B, T, 2, self.n_head // 2, self.head_dim)
         
         q1, q2 = q[:, :, 0], q[:, :, 1]
         k1, k2 = k[:, :, 0], k[:, :, 1]
@@ -113,5 +122,17 @@ class MixerDiffAttention(nn.Module):
         lambda_full = lambda_1 - lambda_2 + self.lambda_init
         
         y = (y1 - lambda_full * y2).contiguous().view_as(x)
+        return y
+
+class DiffAttention(MixerDiffAttention):
+    def __init__(self, config, layer_depth: int = 0):
+        super().__init__(config, layer_depth=layer_depth)
+        
+        # output projection
+        self.c_proj = nn.Linear(config.expand_factor * self.d_model, self.d_model, bias=False)
+        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+    
+    def forward(self, x):
+        y = super().forward(x)
         y = self.c_proj(y)
         return y

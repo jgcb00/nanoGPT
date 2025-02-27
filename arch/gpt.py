@@ -4,12 +4,12 @@ import torch.nn.functional as F
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer_attention import MixerAttention
+from arch.mixer_attention import Attention, DiffAttention
     
 class Block(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, layer_depth: int = 0):
         super().__init__()
-        self.attn = MixerAttention(config)
+        self.attn = DiffAttention(config, layer_depth)
         self.mlp = MLP(config)
 
     def forward(self, x):
@@ -24,7 +24,7 @@ class GPT(nn.Module):
 
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.d_model),
-            h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+            h = nn.ModuleList([Block(config, layer_depth=i+1) for i in range(config.n_layer)]),
         ))
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
         self.lm_head.weight.data.zero_()
