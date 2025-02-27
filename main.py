@@ -20,7 +20,6 @@ from arch.muon import Muon
 from arch.model import GPT
 
 # TODO:
-# lr from config!!!
 # wandb/tensorboard???
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams? +SPAM
 # implement mamba2
@@ -78,14 +77,16 @@ raw_model = model.module # always contains the "raw" unwrapped model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
 # init the optimizer(s)
-if nconfig.optim == 'adam':
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.3, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay) # todo: LR from config!!
+if nconfig.optim == 'adamw':
+    optimizer = torch.optim.Adam(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
     optimizers = [optimizer]
-else:
-    optimizer1 = torch.optim.Adam([raw_model.transformer.wte.weight], lr=0.3,   betas=(0.9, 0.95), fused=True) # todo: LR from config!! cf Kimi
-    optimizer2 = torch.optim.Adam([raw_model.lm_head.weight],         lr=0.002, betas=(0.9, 0.95), fused=True)
-    optimizer3 = Muon(raw_model.transformer.h.parameters(),           lr=0.02,  momentum=0.95)
+elif nconfig.optim == 'muon':
+    optimizer1 = torch.optim.Adam([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), fused=True)
+    optimizer2 = torch.optim.Adam([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), fused=True)
+    optimizer3 = Muon(raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
     optimizers = [optimizer1, optimizer2, optimizer3]
+else:
+    raise ValueError(f"Optimizer {nconfig.optim} not supported")
 
 # learning rate decay scheduler (linear warmup and warmdown)
 def get_lr(it):

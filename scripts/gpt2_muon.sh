@@ -10,6 +10,7 @@ torchrun --nproc_per_node=1 main.py \
     --optim muon \
     --batch_size 512 \
     --device_batch_size 16 \
+    --learning_rate 0.02 \
     --num_iterations 4578 \
     --warmup_iters 0 \
     --warmdown_iters 1308 \

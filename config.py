@@ -9,10 +9,11 @@ class NanoConfig:
     n_layer : int = 12
 
     # optim
-    optim : str = "muon" # adam or muon
+    optim : str = "muon" # adamw or muon
     batch_size : int = 8*64 # batch size, in sequences, across all devices
     device_batch_size : int = 64 # batch size, in sequences, per device
     num_iterations : int = 4578 # number of iterations to run
+    learning_rate : float = 1e-4
     warmup_iters : int = 0
     warmdown_iters : int = 1308 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
     weight_decay : float = 0
