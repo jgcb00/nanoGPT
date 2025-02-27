@@ -23,4 +23,4 @@ torchrun --nproc_per_node=1 main.py \
     --val_loss_every 125 \
     --val_tokens 10485760 \
     --save_every 0 \
-    --log_wandb
+    --log_wandb True
