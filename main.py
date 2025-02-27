@@ -71,7 +71,7 @@ x, y = train_loader.next_batch()
 num_vocab = 50304
 model = GPT(nconfig)
 model = model.cuda()
-model = torch.compile(model)
+#model = torch.compile(model)
 # here we wrap model into DDP container
 model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module # always contains the "raw" unwrapped model
@@ -164,7 +164,7 @@ for step in range(nconfig.num_iterations + 1):
         torch.cuda.synchronize()
         t0 = time.time()
 
-    if master_process and (last_step or (nconfig > 0 and step % nconfig.save_every == 0)):
+    if master_process and (last_step or (nconfig.save_every > 0 and step % nconfig.save_every == 0)):
         # stop the clock
         torch.cuda.synchronize()
         training_time_ms += 1000 * (time.time() - t0)
