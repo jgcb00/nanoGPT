@@ -62,16 +62,17 @@ def print0(s, console=True):
                 print(s)
             print(s, file=f)
 # log current code + versions + config
-print0(code)
-print0('='*100)
+print0(code, console=False)
+print0('='*100, console=False)
 print0(f"Running Python {sys.version}")
 print0(f"Running pytorch {torch.version.__version__} compiled for CUDA {torch.version.cuda}")
 def nvidia_smi():
     import subprocess  # avoid top level import
     return subprocess.run(["nvidia-smi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout
-print0(nvidia_smi())
+print0(nvidia_smi(), console=False)
 print0("="*100)
 print0(nconfig)
+print0("="*100)
 
 # convenience variables
 B, T = nconfig.device_batch_size, nconfig.sequence_length
