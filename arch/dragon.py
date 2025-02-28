@@ -17,8 +17,6 @@ class Block(nn.Module):
                 self.attn = MixerDiffAttention(config, layer_depth)
             case _:
                 raise ValueError(f"Unknown attention type {config.attn_type}")
-        
-        config.rmsnorm = False
 
         self.mamba = MixerMamba2(config=config)
         self.out_proj = nn.Linear(config.expand_factor * config.d_model, config.d_model, bias=False)
