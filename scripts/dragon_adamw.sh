@@ -23,6 +23,7 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --warmup_iters 1000 \
     --warmdown_iters 150 \
     --weight_decay 0.1 \
+    --rmsnorm False \
     --sequence_length 1024 \
     --vocab_size 50304 \
     --input_bin 'data/fineweb10B/fineweb_train_*.bin' \
