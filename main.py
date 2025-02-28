@@ -20,10 +20,7 @@ from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 
 # TODO:
-# implement mamba2
-# implement gdn
-# for hybrid model, add a way to tell which layers are attn
-# add hymba features : local/global attn (why not flex attention?), head regrouping
+# add hymba features : local/global attn (why not flex attention?)
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams? +SPAM
 # next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
 
