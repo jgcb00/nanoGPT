@@ -20,12 +20,12 @@ from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 
 # TODO:
-# add the rest of the hymba features : local/global attn (cf megatron), kv cache cross sharing, GQA
+# add the rest of the hymba features : local/global attn (cf megatron), kv cache cross layer sharing, GQA
 # stableSPAM ? or we stick with muon?
 # curse of depth
 # bigger model scale + bigger seqlen
-# lr!!
-# check correspondance with megatron : do they have extra hparams ? do we have extra hparams? +SPAM
+# lr!! for muon, cf kimi paper
+# check correspondance with megatron : do they have extra hparams ? do we have extra hparams?
 # next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
 
 def parse_args():
