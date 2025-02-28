@@ -20,7 +20,6 @@ from config import NanoConfig
 from arch.distributed_data_loader import DistributedDataLoader
 
 # TODO:
-# checkpoint and resume system?
 # implement mamba2
 # implement gdn
 # for hybrid model, add a way to tell which layers are attn
