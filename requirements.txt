@@ -6,3 +6,6 @@ wandb
 einops
 ninja
 flash-attn
+causal-conv1d
+mamba-ssm
+git+https://github.com/fla-org/flash-linear-attention.git
