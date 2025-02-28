@@ -37,12 +37,12 @@ class NanoConfig:
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     log_wandb : bool = False # whether to log to wandb
     
-    # Mamba related
+    # Mamba and GatedDeltaNet related
     d_state : int = 128
     d_conv : int = 4
     ngroups : int = 8
     rmsnorm: bool = True # whether to use an output norm (before proj)
-    norm_before_gate: bool = False # placement of the output norm relative to the gate: norm(x * f(z)) or norm(x) * f(z)
+    norm_before_gate: bool = False # placement of the output norm relative to the gate: True is norm(x) * f(z) and False is norm(x * f(z)) 
     
     # for Log
     num_params: int = 0

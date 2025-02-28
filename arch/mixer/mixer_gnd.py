@@ -29,15 +29,17 @@ class MixerGatedDeltaNet(nn.Module):
         d_conv=4,
         expand_v=2,
         d_head=64,
+        use_gate=True,
         conv_bias=False,
         conv_init=None,
-        layer_number=None,
+        norm_eps=1e-5
     ):
         super().__init__(config)
         self.config = config
         
         self.d_model = d_model
         self.expand_v = expand_v
+        self.use_gate = use_gate
 
         self.conv_size = d_conv
         self.conv_bias = conv_bias
@@ -50,7 +52,6 @@ class MixerGatedDeltaNet(nn.Module):
         self.value_dim = self.key_dim * self.expand_v
         self.head_k_dim = d_head
         self.head_v_dim = d_head * self.expand_v
-        self.layer_idx = layer_number
         self.silu = nn.SiLU()
 
         self.n_heads_local = self.n_heads // 1
@@ -142,6 +143,14 @@ class MixerGatedDeltaNet(nn.Module):
             nn.init.uniform_(self.q_conv1d.weight, -self.conv_init, self.conv_init)
             nn.init.uniform_(self.k_conv1d.weight, -self.conv_init, self.conv_init)
             nn.init.uniform_(self.v_conv1d.weight, -self.conv_init, self.conv_init)
+
+        if use_gate:
+            self.g_proj = nn.Linear(d_model, self.value_dim, bias=False)
+            if config.rmsnorm:
+                self.o_norm = FusedRMSNormSwishGate(self.head_v_dim, eps=norm_eps) # norm(x) * f(z)
+        else:
+            if config.rmsnorm:
+                self.o_norm = RMSNorm(self.head_v_dim, eps=norm_eps)
         
         self.apply(self._initialize_weights)
     
@@ -201,6 +210,16 @@ class MixerGatedDeltaNet(nn.Module):
                 use_qk_l2norm_in_kernel=True
             ) # (b t h d) where d is head_v_dim
         o = rearrange(o, 'b t h d -> t b (h d)').contiguous()
+
+        if self.use_gate:
+            g = rearrange(self.g_proj(hidden_states), '... (h d) -> ... h d', d=self.head_v_dim)
+            if self.config.rmsnorm:
+                o = self.o_norm(o, g)
+            else:
+                o = o * g * F.sigmoid(g)
+        else:
+            if self.config.rmsnorm:
+                o = self.o_norm(o)
         return o
     
 class GatedDeltaNet(MixerGatedDeltaNet):
