@@ -27,10 +27,10 @@ class Block(nn.Module):
             case _:
                 raise ValueError(f"Unknown linear attention type {config.lin_attn_type}")
         
-        self.out_proj = nn.Linear(config.expand_factor * config.d_model, config.d_model, bias=False)
+        self.out_proj = nn.Linear(config.expand_factor*config.d_model, config.d_model, bias=False)
         self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
-        self.attn_norm = torch.nn.Parameter(torch.ones(config.expand_factor * config.d_model))
-        self.mamba_norm = torch.nn.Parameter(torch.ones(config.expand_factor * config.d_model))
+        self.attn_norm = torch.nn.Parameter(torch.ones(config.expand_factor*config.d_model))
+        self.mamba_norm = torch.nn.Parameter(torch.ones(config.expand_factor*config.d_model))
         self.mlp = MLP(config)
         self.expand_factor = config.expand_factor
 
