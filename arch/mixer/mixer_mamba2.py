@@ -131,8 +131,10 @@ class MixerMamba2(nn.Module):
             assert RMSNormGated is not None
             self.norm = RMSNormGated(self.d_ssm, eps=1e-5, norm_before_gate=self.norm_before_gate,
                                      group_size=self.d_ssm // config.ngroups, **factory_kwargs)
-
-
+            
+            # note about RMSNormGated (f is silu):
+            # if norm_before_gate : norm(x * f(z))
+            # else                : norm(x) * f(z)
 
     def forward(self, u, seqlen=None, seq_idx=None, cu_seqlens=None, inference_params=None):
         """
