@@ -39,7 +39,7 @@ class MixerAttention(nn.Module):
         self.n_heads = config.n_heads
         self.d_model = config.d_model
         self.d_head = self.d_model // self.n_heads * config.expand_factor
-        assert self.d_model % self.n_head == 0
+        assert self.d_model % self.n_heads == 0
         self.c_q = nn.Linear(self.d_model, config.expand_factor*self.d_model, bias=False)
         self.c_k = nn.Linear(self.d_model, config.expand_factor*self.d_model, bias=False)
         self.c_v = nn.Linear(self.d_model, config.expand_factor*self.d_model, bias=False)
