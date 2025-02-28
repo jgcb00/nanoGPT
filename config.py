@@ -13,6 +13,7 @@ class NanoConfig:
     n_layers : int = 12
     expand_factor : int = 1 # expand factor for Mamba/Dragon
     attn_type : str = "normal" # normal, diff
+    lin_attn_type: str = "mamba2" # mamba2, gdn
 
     # optim
     optim : str = "muon" # adamw, spam, or muon

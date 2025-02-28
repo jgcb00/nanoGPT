@@ -6,6 +6,7 @@ from config import NanoConfig
 from arch.mlp import MLP
 from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention
 from arch.mixer.mixer_mamba2 import MixerMamba2
+from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 
 class Block(nn.Module):
     def __init__(self, config : NanoConfig, layer_depth: int = 0):
@@ -18,7 +19,14 @@ class Block(nn.Module):
             case _:
                 raise ValueError(f"Unknown attention type {config.attn_type}")
 
-        self.mamba = MixerMamba2(config=config)
+        match config.lin_attn_type:
+            case "mamba2":
+                self.lin_attn = MixerMamba2(config=config)
+            case "gdn":
+                self.lin_attn = MixerGatedDeltaNet(config=config)
+            case _:
+                raise ValueError(f"Unknown linear attention type {config.lin_attn_type}")
+        
         self.out_proj = nn.Linear(config.expand_factor * config.d_model, config.d_model, bias=False)
         self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
         self.attn_norm = torch.nn.Parameter(torch.ones(config.expand_factor * config.d_model))
@@ -28,7 +36,7 @@ class Block(nn.Module):
 
     def forward(self, x):
         hidden = F.rms_norm(x, (x.size(-1),))
-        y = F.rms_norm(self.attn(hidden), (hidden.size(-1) * self.expand_factor,), self.attn_norm) + F.rms_norm(self.mamba(hidden), (hidden.size(-1) * self.expand_factor,), self.mamba_norm)
+        y = F.rms_norm(self.attn(hidden), (hidden.size(-1) * self.expand_factor,), self.attn_norm) + F.rms_norm(self.lin_attn(hidden), (hidden.size(-1) * self.expand_factor,), self.mamba_norm)
         x = x + self.out_proj(y / 2)
         x = x + self.mlp(F.rms_norm(x, (x.size(-1),)))
         return x
