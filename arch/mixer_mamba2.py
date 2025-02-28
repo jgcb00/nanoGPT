@@ -13,20 +13,33 @@ try:
 except ImportError:
     causal_conv1d_fn, causal_conv1d_update = None, None
 
+try:
+    from causal_conv1d.causal_conv1d_varlen import causal_conv1d_varlen_states
+except ImportError:
+    causal_conv1d_varlen_states = None
+
+try:
+    from mamba_ssm.ops.triton.selective_state_update import selective_state_update
+except ImportError:
+    selective_state_update = None
+
+from mamba_ssm.ops.triton.layernorm_gated import RMSNorm as RMSNormGated
+
+from mamba_ssm.distributed.distributed_utils import all_reduce, reduce_scatter
+
 from mamba_ssm.ops.triton.ssd_combined import mamba_chunk_scan_combined
 from mamba_ssm.ops.triton.ssd_combined import mamba_split_conv1d_scan_combined
+
+from config import NanoConfig
 
 class MixerMamba2(nn.Module):
     def __init__(
         self,
-        d_model,
-        d_state=128,
+        config: NanoConfig,
         d_conv=4,
         conv_init=None,
-        expand=2,
         headdim=64,
         d_ssm=None,  # If not None, we only apply SSM on this many dimensions, the rest uses gated MLP
-        ngroups=1,
         A_init_range=(1, 16),
         D_has_hdim=False,
         rmsnorm=True,
@@ -41,28 +54,26 @@ class MixerMamba2(nn.Module):
         chunk_size=256,
         use_mem_eff_path=True,
         layer_idx=None,  # Absorb kwarg for general module
-        process_group=None,
         sequence_parallel=True,
         device=None,
         dtype=None,
     ):
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
-        self.d_model = d_model
-        self.d_state = d_state
-        self.d_conv = d_conv
+        self.d_model = config.d_model
+        self.d_state = config.d_state
+        self.d_conv = config.d_conv
         self.conv_init = conv_init
-        self.expand = expand
-        self.process_group = process_group
+        self.expand = config.expand_factor
         self.sequence_parallel = sequence_parallel
-        self.world_size = 1 if process_group is None else process_group.size()
-        self.local_rank = 0 if process_group is None else process_group.rank()
+        self.world_size = 1
+        self.local_rank = 0
         self.d_inner = (self.expand * self.d_model) // self.world_size
         assert self.d_inner * self.world_size == self.expand * self.d_model
         self.headdim = headdim
         self.d_ssm = self.d_inner if d_ssm is None else d_ssm // self.world_size
-        assert ngroups % self.world_size == 0
-        self.ngroups = ngroups // self.world_size
+        assert config.ngroups % self.world_size == 0
+        self.ngroups = config.ngroups // self.world_size
         assert self.d_ssm % self.headdim == 0
         self.nheads = self.d_ssm // self.headdim
         self.D_has_hdim = D_has_hdim
@@ -76,13 +87,8 @@ class MixerMamba2(nn.Module):
 
         # Order: [z, x, B, C, dt]
         d_in_proj = 2 * self.d_inner + 2 * self.ngroups * self.d_state + self.nheads
-        if self.process_group is None:
-            self.in_proj = nn.Linear(self.d_model, d_in_proj, bias=bias, **factory_kwargs)
-        else:
-            self.in_proj = ColumnParallelLinear(self.d_model, d_in_proj * self.world_size, bias=bias,
-                                                process_group=self.process_group, sequence_parallel=self.sequence_parallel,
-                                                **factory_kwargs)
-
+        self.in_proj = nn.Linear(self.d_model, d_in_proj, bias=bias, **factory_kwargs)
+        
         conv_dim = self.d_ssm + 2 * self.ngroups * self.d_state
         self.conv1d = nn.Conv1d(
             in_channels=conv_dim,
@@ -124,14 +130,9 @@ class MixerMamba2(nn.Module):
         if self.rmsnorm:
             assert RMSNormGated is not None
             self.norm = RMSNormGated(self.d_ssm, eps=1e-5, norm_before_gate=self.norm_before_gate,
-                                     group_size=self.d_ssm // ngroups, **factory_kwargs)
+                                     group_size=self.d_ssm // config.ngroups, **factory_kwargs)
 
-        if self.process_group is None:
-            self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=bias, **factory_kwargs)
-        else:
-            self.out_proj = RowParallelLinear(self.d_inner * self.world_size, self.d_model, bias=bias,
-                                              process_group=self.process_group, sequence_parallel=self.sequence_parallel,
-                                              **factory_kwargs)
+
 
     def forward(self, u, seqlen=None, seq_idx=None, cu_seqlens=None, inference_params=None):
         """
@@ -176,8 +177,6 @@ class MixerMamba2(nn.Module):
                 activation=self.activation,
                 rmsnorm_weight=self.norm.weight if self.rmsnorm else None,
                 rmsnorm_eps=self.norm.eps if self.rmsnorm else 1e-6,
-                outproj_weight=self.out_proj.weight,
-                outproj_bias=self.out_proj.bias,
                 headdim=None if self.D_has_hdim else self.headdim,
                 ngroups=self.ngroups,
                 norm_before_gate=self.norm_before_gate,
@@ -185,9 +184,6 @@ class MixerMamba2(nn.Module):
             )
             if seqlen_og is not None:
                 out = rearrange(out, "b l d -> (b l) d")
-            if self.process_group is not None:
-                reduce_fn = reduce_scatter if self.sequence_parallel else all_reduce
-                out = reduce_fn(out, self.process_group)
         else:
             d_mlp = (zxbcdt.shape[-1] - 2 * self.d_ssm - 2 * self.ngroups * self.d_state - self.nheads) // 2
             z0, x0, z, xBC, dt = torch.split(
@@ -254,7 +250,7 @@ class MixerMamba2(nn.Module):
                 y = torch.cat([F.silu(z0) * x0, y], dim=-1)
             if seqlen_og is not None:
                 y = rearrange(y, "b l d -> (b l) d")
-            out = self.out_proj(y)
+            out = y
         return out
 
     def step(self, hidden_states, conv_state, ssm_state):
@@ -321,8 +317,7 @@ class MixerMamba2(nn.Module):
             y = self.norm(y, z)
         if d_mlp > 0:
             y = torch.cat([F.silu(z0) * x0, y], dim=-1)
-        out = self.out_proj(y)
-        return out.unsqueeze(1), conv_state, ssm_state
+        return y.unsqueeze(1), conv_state, ssm_state
 
     def allocate_inference_cache(self, batch_size, max_seqlen, dtype=None, **kwargs):
         device = self.out_proj.weight.device
@@ -363,3 +358,13 @@ class MixerMamba2(nn.Module):
                 conv_state.zero_()
                 ssm_state.zero_()
         return conv_state, ssm_state
+    
+class Mamba2(MixerMamba2):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=False)
+        self.out_proj.weight.data.zero_()
+    
+    def forward(self, *args, **kwargs):
+        out = super().forward(*args, **kwargs)
+        return self.out_proj(out)

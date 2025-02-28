@@ -44,6 +44,7 @@ class MixerAttention(nn.Module):
         self.c_k = nn.Linear(self.d_model, config.expand_factor*self.d_model, bias=False)
         self.c_v = nn.Linear(self.d_model, config.expand_factor*self.d_model, bias=False)
         self.rotary = Rotary(self.d_head)
+        self.expand_factor = config.expand_factor
 
     def forward(self, x):
         # x: (B,T,D) -> y: (B,T,D)
@@ -57,7 +58,7 @@ class MixerAttention(nn.Module):
         #y = F.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), is_causal=True)
         #y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
         y = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True)
-        y = y.contiguous().view_as(x)
+        y = y.contiguous().view(B, T, self.d_model * self.expand_factor)
         return y
     
 class Attention(MixerAttention):
@@ -121,7 +122,7 @@ class MixerDiffAttention(nn.Module):
         lambda_2 = torch.exp(torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()).type_as(y2)
         lambda_full = lambda_1 - lambda_2 + self.lambda_init
         
-        y = (y1 - lambda_full * y2).contiguous().view_as(x)
+        y = (y1 - lambda_full * y2).contiguous().view(B, T, self.d_model * self.expand_factor)
         return y
 
 class DiffAttention(MixerDiffAttention):

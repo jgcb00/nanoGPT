@@ -1,3 +1,4 @@
+import itertools
 import os
 import sys
 import argparse
@@ -82,13 +83,17 @@ match args.model:
     case _:
         raise ValueError(f"Model {args.model} not supported")        
 
+#count parameters
+num_params = sum(p.numel() for p in model.parameters())
+print(f"number of parameters: {num_params}")
+nconfig.num_params = num_params
+
 model = model.cuda()
 model = torch.compile(model, dynamic=False)
 # here we wrap model into DDP container
 model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module # always contains the "raw" unwrapped model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
-
 # init the optimizer(s)
 match nconfig.optim:
     case 'adamw':
@@ -100,10 +105,10 @@ match nconfig.optim:
         optimizer = SPAMAdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
         optimizers = [optimizer]
     case 'muon':
-        from torch.optim import Adam
+        from torch.optim import AdamW
         from arch.optim.muon import Muon
-        optimizer1 = Adam([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), fused=True)
-        optimizer2 = Adam([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), fused=True)
+        optimizer1 = AdamW([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), fused=True)
+        optimizer2 = AdamW([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), fused=True)
         optimizers = [optimizer1, optimizer2]
         match nconfig.model:
             case 'gpt':
@@ -113,18 +118,19 @@ match nconfig.optim:
                         optimizers.append(optimizer3)
                     case 'diff':
                         optimizer3 = Muon([
-                            raw_model.transformer.h.mlp.parameters(), 
-                            raw_model.transformer.h.attn.c_q.parameters(),
-                            raw_model.transformer.h.attn.c_k.parameters(),
-                            raw_model.transformer.h.attn.c_v.parameters(),
-                            ], lr=nconfig.learning_rate, momentum=0.95)
+                            *itertools.chain.from_iterable(block.mlp.parameters() for block in raw_model.transformer.h),
+                            *[block.attn.c_q.weight for block in raw_model.transformer.h],
+                            *[block.attn.c_k.weight for block in raw_model.transformer.h],
+                            *[block.attn.c_v.weight for block in raw_model.transformer.h],
+                            *[block.attn.c_proj.weight for block in raw_model.transformer.h],
+                        ], lr=nconfig.learning_rate, momentum=0.95)
                         optimizers.append(optimizer3)
                         optimizer4 = AdamW([
-                            raw_model.transformer.h.attn.lambda_q1,
-                            raw_model.transformer.h.attn.lambda_k1,
-                            raw_model.transformer.h.attn.lambda_q2,
-                            raw_model.transformer.h.attn.lambda_k2,
-                            ], lr=1.8e-3, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
+                            *[block.attn.lambda_q1 for block in raw_model.transformer.h],
+                            *[block.attn.lambda_k1 for block in raw_model.transformer.h],
+                            *[block.attn.lambda_q2 for block in raw_model.transformer.h],
+                            *[block.attn.lambda_k2 for block in raw_model.transformer.h],
+                        ], lr=1.8e-3, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
                         optimizers.append(optimizer4)
             case 'dragon':
                 pass

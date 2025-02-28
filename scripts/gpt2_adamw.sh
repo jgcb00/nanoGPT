@@ -18,8 +18,8 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --device_batch_size 32 \
     --learning_rate 1.8e-3 \
     --num_iterations 1000 \
-    --warmup_iters 0 \
-    --warmdown_iters 1308 \
+    --warmup_iters 50 \
+    --warmdown_iters 150 \
     --weight_decay 0.1 \
     --sequence_length 1024 \
     --vocab_size 50304 \

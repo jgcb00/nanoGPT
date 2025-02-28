@@ -9,7 +9,8 @@ RUN_NAME=${1}
 NUM_GPUS=${2:-1}
 
 echo "RUN_NAME: $RUN_NAME"
-
+# there is already a warmup in the spam optimizer
+# so we set warmup_iters to 0
 torchrun --nproc_per_node=$NUM_GPUS main.py \
     --run_name $RUN_NAME \
     --d_model 768 \
@@ -18,10 +19,10 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --optim spam \
     --batch_size 512 \
     --device_batch_size 32 \
-    --learning_rate 1.8e-3 \
+    --learning_rate 1e-3 \
     --num_iterations 1000 \
-    --warmup_iters 200 \
-    --warmdown_iters 1308 \
+    --warmup_iters 0 \
+    --warmdown_iters 150 \
     --weight_decay 0.1 \
     --sequence_length 1024 \
     --vocab_size 50304 \

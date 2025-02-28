@@ -21,7 +21,7 @@ class NanoConfig:
     num_iterations : int = 1000 # number of iterations to run
     learning_rate : float = 1e-4
     warmup_iters : int = 0
-    warmdown_iters : int = 1308 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
+    warmdown_iters : int = 150 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
     weight_decay : float = 0.
     grad_norm_clip : float = 1.0
 
@@ -36,6 +36,24 @@ class NanoConfig:
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     log_wandb : bool = False # whether to log to wandb
+    
+    # Mamba related
+    d_state : int = 128
+    d_conv : int = 4
+    ngroups : int = 8
+    
+    
+    # for Log
+    num_params: int = 0
+
+    
+    def __post_init__(self):
+        # check for valid model
+        assert self.model in ["gpt", "dragon"]
+        # check for valid attention type
+        assert self.attn_type in ["normal", "diff"]
+        # create num_parameters
+
     
     @staticmethod
     def add_args(parent_parser):

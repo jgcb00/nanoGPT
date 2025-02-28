@@ -20,8 +20,8 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --device_batch_size 32 \
     --learning_rate 8e-4 \ #comes from the stableSpam paper
     --num_iterations 1000 \
-    --warmup_iters 200 \
-    --warmdown_iters 1308 \
+    --warmup_iters 50 \
+    --warmdown_iters 150 \
     --weight_decay 0.1 \
     --sequence_length 1024 \
     --vocab_size 50304 \

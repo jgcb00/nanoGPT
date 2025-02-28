@@ -10,16 +10,17 @@ NUM_GPUS=${2:-1}
 
 torchrun --nproc_per_node=$NUM_GPUS main.py \
     --run_name $RUN_NAME \
+    --model dragon \
     --d_model 768 \
     --n_head 12 \
-    --n_layer 12 \
-    --attn_type diff \
-    --optim muon \
+    --n_layer 7 \
+    --expand_factor 2 \
+    --optim spam \
     --batch_size 512 \
     --device_batch_size 32 \
     --learning_rate 1.8e-3 \
     --num_iterations 1000 \
-    --warmup_iters 50 \
+    --warmup_iters 1000 \
     --warmdown_iters 150 \
     --weight_decay 0.1 \
     --sequence_length 1024 \
