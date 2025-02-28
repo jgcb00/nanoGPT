@@ -133,8 +133,8 @@ class MixerMamba2(nn.Module):
                                      group_size=self.d_ssm // config.ngroups, **factory_kwargs)
             
             # note about RMSNormGated (f is silu):
-            # if norm_before_gate : norm(x * f(z))
-            # else                : norm(x) * f(z)
+            # if norm_before_gate : norm(x) * f(z)
+            # else                : norm(x * f(z))
 
     def forward(self, u, seqlen=None, seq_idx=None, cu_seqlens=None, inference_params=None):
         """
