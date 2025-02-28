@@ -6,6 +6,7 @@ from config import NanoConfig
 from arch.mlp import MLP
 from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention
 from arch.mixer.mixer_mamba2 import MixerMamba2
+
 class Block(nn.Module):
     def __init__(self, config : NanoConfig, layer_depth: int = 0):
         super().__init__()
@@ -16,6 +17,8 @@ class Block(nn.Module):
                 self.attn = MixerDiffAttention(config, layer_depth)
             case _:
                 raise ValueError(f"Unknown attention type {config.attn_type}")
+        
+        config.rmsnorm = False
 
         self.mamba = MixerMamba2(config=config)
         self.out_proj = nn.Linear(config.expand_factor * config.d_model, config.d_model, bias=False)

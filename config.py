@@ -41,7 +41,8 @@ class NanoConfig:
     d_state : int = 128
     d_conv : int = 4
     ngroups : int = 8
-    
+    rmsnorm: bool = True # whether to use an output norm (before proj)
+    norm_before_gate: bool = False # placement of the output norm relative to the gate: norm(x * f(z)) or norm(x) * f(z)
     
     # for Log
     num_params: int = 0
