@@ -51,7 +51,7 @@ class NanoConfig:
     use_gate: bool = True
     expand_v : int = 2
 
-    # for log
+    # for logging
     num_params: int = 0
     
     def __post_init__(self):
