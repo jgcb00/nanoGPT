@@ -11,7 +11,7 @@ class Block(nn.Module):
         super().__init__()
         match config.attn_type:
             case "normal":
-                self.attn = Attention(config, layer_depth)
+                self.attn = Attention(config)
             case "diff":
                 self.attn = DiffAttention(config, layer_depth)
             case _:

@@ -36,24 +36,20 @@ class MixerMamba2(nn.Module):
     def __init__(
         self,
         config: NanoConfig,
-        d_conv=4,
-        conv_init=None,
         headdim=64,
         d_ssm=None,  # If not None, we only apply SSM on this many dimensions, the rest uses gated MLP
         A_init_range=(1, 16),
         D_has_hdim=False,
-        rmsnorm=True,
-        norm_before_gate=False,
         dt_min=0.001,
         dt_max=0.1,
         dt_init_floor=1e-4,
         dt_limit=(0.0, float("inf")),
         bias=False,
         conv_bias=True,
+        conv_init=None,
         # Fused kernel and sharding options
         chunk_size=256,
         use_mem_eff_path=True,
-        layer_idx=None,  # Absorb kwarg for general module
         sequence_parallel=True,
         device=None,
         dtype=None,
@@ -77,13 +73,12 @@ class MixerMamba2(nn.Module):
         assert self.d_ssm % self.headdim == 0
         self.nheads = self.d_ssm // self.headdim
         self.D_has_hdim = D_has_hdim
-        self.rmsnorm = rmsnorm
-        self.norm_before_gate = norm_before_gate
+        self.rmsnorm = config.rmsnorm
+        self.norm_before_gate = config.norm_before_gate
         self.dt_limit = dt_limit
         self.activation = "silu"
         self.chunk_size = chunk_size
         self.use_mem_eff_path = use_mem_eff_path
-        self.layer_idx = layer_idx
 
         # Order: [z, x, B, C, dt]
         d_in_proj = 2 * self.d_inner + 2 * self.ngroups * self.d_state + self.nheads
@@ -94,9 +89,9 @@ class MixerMamba2(nn.Module):
             in_channels=conv_dim,
             out_channels=conv_dim,
             bias=conv_bias,
-            kernel_size=d_conv,
+            kernel_size=config.d_conv,
             groups=conv_dim,
-            padding=d_conv - 1,
+            padding=config.d_conv - 1,
             **factory_kwargs,
         )
         if self.conv_init is not None:

@@ -12,7 +12,7 @@ class Block(nn.Module):
         super().__init__()
         match config.attn_type:
             case "normal":
-                self.attn = MixerAttention(config, layer_depth)
+                self.attn = MixerAttention(config)
             case "diff":
                 self.attn = MixerDiffAttention(config, layer_depth)
             case _:

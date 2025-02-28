@@ -9,8 +9,8 @@ class NanoConfig:
     
     # arch - general
     d_model : int = 768
-    n_head : int = 6 # head dim 128 suggested by @Grad62304977
-    n_layer : int = 12
+    n_heads : int = 6 # head dim 128 suggested by @Grad62304977
+    n_layers : int = 12
     expand_factor : int = 1 # expand factor for Mamba/Dragon
     attn_type : str = "normal" # normal, diff
 
@@ -20,8 +20,8 @@ class NanoConfig:
     device_batch_size : int = 64 # batch size, in sequences, per device
     num_iterations : int = 1000 # number of iterations to run
     learning_rate : float = 1e-4
-    warmup_iters : int = 0
-    warmdown_iters : int = 150 # number of iterations of linear warmup/warmdown for triangular or trapezoidal schedule
+    warmup_iters : int = 0 # WSD
+    warmdown_iters : int = 150 # WSD
     weight_decay : float = 0.
     grad_norm_clip : float = 1.0
 
@@ -42,11 +42,14 @@ class NanoConfig:
     d_conv : int = 4
     ngroups : int = 8
     rmsnorm: bool = True # whether to use an output norm (before proj)
-    norm_before_gate: bool = False # placement of the output norm relative to the gate: True is norm(x) * f(z) and False is norm(x * f(z)) 
-    
-    # for Log
-    num_params: int = 0
+    norm_before_gate: bool = False # placement of the output norm relative to the gate: True is norm(x) * f(z) and False is norm(x * f(z))
 
+    # GatedDeltaNet related
+    use_gate: bool = True
+    expand_v : int = 2
+
+    # for log
+    num_params: int = 0
     
     def __post_init__(self):
         # check for valid model
