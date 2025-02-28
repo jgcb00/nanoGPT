@@ -29,7 +29,7 @@ class MixerGatedDeltaNet(nn.Module):
         conv_init=None,
         norm_eps=1e-5
     ):
-        super().__init__(config)
+        super().__init__()
         self.config = config
         
         self.d_model = config.d_model
@@ -81,12 +81,10 @@ class MixerGatedDeltaNet(nn.Module):
 
         # Initialize dt bias so that F.softplus(dt_bias) is between dt_min and dt_max
         dt = torch.exp(
-            torch.rand(
-                self.n_heads_local, device=torch.cuda.current_device(), dtype=config.params_dtype
-            )
-            * (math.log(dt_max) - math.log(dt_min))
+            torch.rand(self.n_heads_local) * (math.log(dt_max) - math.log(dt_min))
             + math.log(dt_min)
-        ).clamp(min=dt_init_floor)
+        )
+        dt = torch.clamp(dt, min=dt_init_floor)
         # Inverse of softplus: https://github.com/pytorch/pytorch/issues/72759
         inv_dt = dt + torch.log(-torch.expm1(-dt))
         with torch.no_grad():
@@ -107,15 +105,6 @@ class MixerGatedDeltaNet(nn.Module):
         A_log = torch.log(A)  # Keep A_log in fp32
         self.A_log = nn.Parameter(A_log)
         self.A_log._no_weight_decay = True
-
-        # D "skip" parameter
-        self.D = nn.Parameter(
-            torch.ones(
-                self.n_heads_local,
-                device=torch.cuda.current_device(),
-            )
-        )  # Keep in fp32
-        self.D._no_weight_decay = True
 
         # ShortConvolution is a wrapper around nn.Conv1d (for definition) and causal_conv1d (for forward)
         self.q_conv1d = ShortConvolution(
@@ -162,7 +151,7 @@ class MixerGatedDeltaNet(nn.Module):
         """
         _, batch, dim = hidden_states.shape
 
-        qkvba, _ = self.in_proj(hidden_states) # (b, l, D)
+        qkvba = self.in_proj(hidden_states) # (b, l, D)
         
         # split proj into q, k, v, b, a
         q_proj = qkvba[:, :, self.q_slice]
@@ -204,8 +193,7 @@ class MixerGatedDeltaNet(nn.Module):
                 head_first=False,
                 use_qk_l2norm_in_kernel=True
             ) # (b t h d) where d is head_v_dim
-        o = rearrange(o, 'b t h d -> t b (h d)').contiguous()
-
+        
         if self.use_gate:
             g = rearrange(self.g_proj(hidden_states), '... (h d) -> ... h d', d=self.head_v_dim)
             if self.config.rmsnorm:
@@ -215,6 +203,7 @@ class MixerGatedDeltaNet(nn.Module):
         else:
             if self.config.rmsnorm:
                 o = self.o_norm(o)
+        o = rearrange(o, 'b t h d -> b t (h d)').contiguous()
         return o
     
 class GatedDeltaNet(MixerGatedDeltaNet):

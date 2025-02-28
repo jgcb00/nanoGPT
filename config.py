@@ -39,12 +39,12 @@ class NanoConfig:
     log_wandb : bool = False # whether to log to wandb
     
     # Mamba and GatedDeltaNet related
-    rmsnorm: bool = True # whether to use an output norm (before proj)
+    rmsnorm: bool = False # whether to use an output norm (before proj)
 
     # Mamba related
     d_state: int = 128
     d_conv: int = 4
-    headdim: int = 64,
+    headdim: int = 64
     ngroups : int = 8
     norm_before_gate: bool = False # placement of the output norm relative to the gate: True is norm(x) * f(z) and False is norm(x * f(z))
 

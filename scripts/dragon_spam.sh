@@ -12,7 +12,7 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --run_name $RUN_NAME \
     --model dragon \
     --attn_type normal \
-    --lin_attn_type mamba2 \
+    --lin_attn_type gdn \
     --d_model 768 \
     --n_head 12 \
     --n_layer 7 \
@@ -25,7 +25,6 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --warmup_iters 0 \
     --warmdown_iters 150 \
     --weight_decay 0.1 \
-    --rmsnorm False \
     --sequence_length 1024 \
     --vocab_size 50304 \
     --input_bin 'data/fineweb10B/fineweb_train_*.bin' \

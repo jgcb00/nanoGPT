@@ -20,7 +20,11 @@ from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 
 # TODO:
-# add hymba features : local/global attn (why not flex attention?)
+# add the rest of the hymba features : local/global attn (cf megatron), kv cache cross sharing, GQA
+# stableSPAM ? or we stick with muon?
+# curse of depth
+# bigger model scale + bigger seqlen
+# lr!!
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams? +SPAM
 # next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
 
@@ -184,8 +188,7 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 
 # begin wandb logging
 if master_process:
-    #wandb.init(project='dragon', config={**varje ps(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')#todo
-    wandb.init(project='nanoGPT', name=nconfig.run_name, config={**vars(nconfig)})
+    wandb.init(project='nanoGPT', name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
 
 training_time_ms = 0
 # start the clock
@@ -278,6 +281,6 @@ for step in range(nconfig.num_iterations + 1):
     approx_time = training_time_ms + 1000 * (time.time() - t0)
     print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms")
     if master_process:
-        wandb.log({'train_loss': train_loss.item(), 'step_avg_time': approx_time/timed_steps, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)}, 'grad_norm': grad_norm.item()}, step=step)#todo
+        wandb.log({'train_loss': train_loss.item(), 'step_avg_time': approx_time/timed_steps, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)}, 'grad_norm': grad_norm.item()}, step=step)
 
 print0(f"peak memory consumption: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")

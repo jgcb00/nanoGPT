@@ -98,14 +98,6 @@ class SPAMAdamW(Optimizer):
         threshold: int = 5000,
         grad_accu_steps: int = 20,
     ):
-        if not no_deprecation_warning:
-            warnings.warn(
-                "This implementation of AdamW is deprecated and will be removed in "
-                "a future version. Use `torch.optim.AdamW` instead, or set "
-                "`no_deprecation_warning=True` to disable this warning.",
-                FutureWarning,
-            )
-
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr} - should be >= 0.0")
         if not 0.0 <= betas[0] < 1.0:
