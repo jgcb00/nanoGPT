@@ -30,7 +30,7 @@ class GPT(nn.Module):
 
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.d_model),
-            h = nn.ModuleList([Block(config, layer_depth=i+1) for i in range(config.n_layer)]),
+            h = nn.ModuleList([Block(config, layer_depth=i+1) for i in range(config.n_layers)]),
         ))
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
         self.lm_head.weight.data.zero_()

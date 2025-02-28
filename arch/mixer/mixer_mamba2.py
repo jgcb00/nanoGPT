@@ -36,7 +36,6 @@ class MixerMamba2(nn.Module):
     def __init__(
         self,
         config: NanoConfig,
-        headdim=64,
         d_ssm=None,  # If not None, we only apply SSM on this many dimensions, the rest uses gated MLP
         A_init_range=(1, 16),
         D_has_hdim=False,
@@ -66,7 +65,7 @@ class MixerMamba2(nn.Module):
         self.local_rank = 0
         self.d_inner = (self.expand * self.d_model) // self.world_size
         assert self.d_inner * self.world_size == self.expand * self.d_model
-        self.headdim = headdim
+        self.headdim = config.headdim
         self.d_ssm = self.d_inner if d_ssm is None else d_ssm // self.world_size
         assert config.ngroups % self.world_size == 0
         self.ngroups = config.ngroups // self.world_size
