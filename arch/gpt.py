@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer_attention import Attention, DiffAttention
+from arch.mixer.mixer_attention import Attention, DiffAttention
     
 class Block(nn.Module):
     def __init__(self, config, layer_depth: int = 0):

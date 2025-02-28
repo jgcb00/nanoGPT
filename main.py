@@ -17,7 +17,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from config import NanoConfig
-from arch.distributed_data_loader import DistributedDataLoader
+from arch.data.distributed_data_loader import DistributedDataLoader
 
 # TODO:
 # implement mamba2
