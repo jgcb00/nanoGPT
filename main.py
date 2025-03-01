@@ -20,6 +20,7 @@ from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 
 # TODO:
+# GQA : test on regular attention, implement for diffattn, test for diffattn
 # add the rest of the hymba features : local/global attn (cf megatron), kv cache cross layer sharing, GQA
 # stableSPAM ? or we stick with muon?
 # curse of depth

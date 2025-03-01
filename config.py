@@ -15,6 +15,23 @@ class NanoConfig:
     attn_type : str = "normal" # normal, diff
     lin_attn_type: str = "mamba2" # mamba2, gdn
 
+    # Attention related
+    n_kv_heads : int = 3
+
+    # Mamba and GatedDeltaNet related
+    rmsnorm: bool = False # whether to use an output norm (before proj)
+
+    # Mamba related
+    d_state: int = 128
+    d_conv: int = 4
+    headdim: int = 64
+    ngroups : int = 8
+    norm_before_gate: bool = False # placement of the output norm relative to the gate: True is norm(x) * f(z) and False is norm(x * f(z))
+
+    # GatedDeltaNet related
+    use_gate: bool = True
+    expand_v : int = 2
+
     # optim
     optim : str = "muon" # adamw, spam, or muon
     batch_size : int = 8*64 # batch size, in sequences, across all devices
@@ -37,20 +54,6 @@ class NanoConfig:
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     log_wandb : bool = False # whether to log to wandb
-    
-    # Mamba and GatedDeltaNet related
-    rmsnorm: bool = False # whether to use an output norm (before proj)
-
-    # Mamba related
-    d_state: int = 128
-    d_conv: int = 4
-    headdim: int = 64
-    ngroups : int = 8
-    norm_before_gate: bool = False # placement of the output norm relative to the gate: True is norm(x) * f(z) and False is norm(x * f(z))
-
-    # GatedDeltaNet related
-    use_gate: bool = True
-    expand_v : int = 2
 
     # for logging
     num_params: int = 0
@@ -60,8 +63,12 @@ class NanoConfig:
         assert self.model in ["gpt", "dragon"]
         # check for valid attention type
         assert self.attn_type in ["normal", "diff"]
-        # create num_parameters
-
+        # check for valid lin attn type
+        assert self.lin_attn_type in ["mamba2", "gdn"]
+        # check for valid optim type
+        assert self.optim in ["adamw", "spam", "muon"]
+        # check for valid n_kv_heads
+        assert self.n_heads % self.n_kv_heads == 0, "n_heads must be divisible by n_kv_heads"
     
     @staticmethod
     def add_args(parent_parser):

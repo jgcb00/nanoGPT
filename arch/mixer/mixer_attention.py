@@ -39,22 +39,25 @@ class MixerAttention(nn.Module):
         self.n_heads = config.n_heads
         self.d_model = config.d_model
         self.d_head = self.d_model // self.n_heads * config.expand_factor
-        assert self.d_model % self.n_heads == 0
-        self.c_q = nn.Linear(self.d_model, config.expand_factor*self.d_model, bias=False)
-        self.c_k = nn.Linear(self.d_model, config.expand_factor*self.d_model, bias=False)
-        self.c_v = nn.Linear(self.d_model, config.expand_factor*self.d_model, bias=False)
-        self.rotary = Rotary(self.d_head)
+        self.n_kv_heads = config.n_kv_heads
+        self.n_kv_groups = self.n_heads // self.n_kv_heads
         self.expand_factor = config.expand_factor
+        assert self.d_model % self.n_heads == 0
+        self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
+        self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
+        self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
+        self.rotary = Rotary(self.d_head)
 
     def forward(self, x):
         # x: (B,T,D) -> y: (B,T,D)
         B, T, _ = x.size() # batch size, sequence length, embedding dimensionality (d_model)
         q = self.c_q(x).view(B, T, self.n_heads, self.d_head)
-        k = self.c_k(x).view(B, T, self.n_heads, self.d_head)
-        v = self.c_v(x).view(B, T, self.n_heads, self.d_head)
+        k = self.c_k(x).view(B, T, self.n_kv_heads, self.d_head)
+        v = self.c_v(x).view(B, T, self.n_kv_heads, self.d_head)
         cos, sin = self.rotary(q)
         q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) # QK norm suggested by @Grad62304977
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
+        k, v = repeat_kv(k, self.n_kv_groups), repeat_kv(v, self.n_kv_groups) # GQA
         y = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True)
         y = y.contiguous().view(B, T, self.d_model * self.expand_factor)
         return y
@@ -130,3 +133,15 @@ class DiffAttention(MixerDiffAttention):
         y = super().forward(x)
         y = self.c_proj(y)
         return y
+
+# Copied from transformers.models.llama.modeling_llama.repeat_kv
+def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
+    """
+    This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
+    num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
+    """
+    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
+    if n_rep == 1:
+        return hidden_states
+    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
+    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
