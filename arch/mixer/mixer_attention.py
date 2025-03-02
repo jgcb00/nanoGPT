@@ -34,7 +34,7 @@ def apply_rotary_emb(x, cos, sin):
     return torch.cat([y1, y2], 3).type_as(x)
 
 class MixerAttention(nn.Module):
-    def __init__(self, config: NanoConfig):
+    def __init__(self, config: NanoConfig, swa: bool):
         super().__init__()
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
@@ -42,6 +42,7 @@ class MixerAttention(nn.Module):
         self.d_model = config.d_model
         self.d_head = self.d_model // self.n_heads * config.expand_factor
         self.expand_factor = config.expand_factor
+        self.swa, self.window_size = swa, config.swa_window_size
         assert self.d_model % self.n_heads == 0
         self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
         self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
@@ -60,14 +61,15 @@ class MixerAttention(nn.Module):
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
 
         k, v = repeat_kv(k, self.n_kv_groups), repeat_kv(v, self.n_kv_groups) # GQA
-
-        y = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True)
+        
+        window = (self.window_size, self.window_size) if self.swa else (-1, -1)
+        y = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=window)
         y = y.contiguous().view(B, T, self.d_model*self.expand_factor)
         return y
     
 class Attention(MixerAttention):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config: NanoConfig, swa: bool):
+        super().__init__(config, swa)
         
         # output projection
         self.c_proj = nn.Linear(config.expand_factor * self.d_model, self.d_model, bias=False)
@@ -79,7 +81,7 @@ class Attention(MixerAttention):
         return y
     
 class MixerDiffAttention(nn.Module):
-    def __init__(self, config: NanoConfig, layer_depth: int = 0):
+    def __init__(self, config: NanoConfig, swa: bool, layer_depth: int = 0):
         super().__init__()
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
@@ -87,6 +89,7 @@ class MixerDiffAttention(nn.Module):
         self.d_model = config.d_model
         self.head_dim = self.d_model // self.n_heads * config.expand_factor
         self.expand_factor = config.expand_factor
+        self.swa = swa, self.window_size = config.swa_window_size
         self.lambda_init = 0.8 - 0.6 * math.exp(-0.3 * layer_depth)
         
         head_dim = self.head_dim // 2
@@ -118,8 +121,9 @@ class MixerDiffAttention(nn.Module):
         
         k1, k2, v = repeat_kv(k1, self.n_kv_groups), repeat_kv(k2, self.n_kv_groups), repeat_kv(v, self.n_kv_groups) # GQA
 
-        y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True)
-        y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True)
+        window = (self.window_size, self.window_size) if self.swa else (-1, -1)
+        y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=window)
+        y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=window)
         lambda_1 = torch.exp(torch.sum(self.lambda_q1*self.lambda_k1, dim=-1).float()).type_as(y1)
         lambda_2 = torch.exp(torch.sum(self.lambda_q2*self.lambda_k2, dim=-1).float()).type_as(y2)
         lambda_full = lambda_1 - lambda_2 + self.lambda_init
@@ -128,8 +132,8 @@ class MixerDiffAttention(nn.Module):
         return y
 
 class DiffAttention(MixerDiffAttention):
-    def __init__(self, config, layer_depth: int = 0):
-        super().__init__(config, layer_depth=layer_depth)
+    def __init__(self, config: NanoConfig, swa: bool, layer_depth: int = 0):
+        super().__init__(config, swa=swa, layer_depth=layer_depth)
         
         # output projection
         self.c_proj = nn.Linear(config.expand_factor * self.d_model, self.d_model, bias=False)

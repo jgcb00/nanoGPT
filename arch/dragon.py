@@ -9,13 +9,13 @@ from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 
 class Block(nn.Module):
-    def __init__(self, config : NanoConfig, layer_depth: int = 0):
+    def __init__(self, config : NanoConfig, swa: bool = False, layer_depth: int = 0):
         super().__init__()
         match config.attn_type:
             case "normal":
-                self.attn = MixerAttention(config)
+                self.attn = MixerAttention(config, swa=swa)
             case "diff":
-                self.attn = MixerDiffAttention(config, layer_depth)
+                self.attn = MixerDiffAttention(config, swa=swa, layer_depth=layer_depth)
             case _:
                 raise ValueError(f"Unknown attention type {config.attn_type}")
 
@@ -46,9 +46,23 @@ class Dragon(nn.Module):
         super().__init__()
         self.config = config
 
+        blocks = []
+        for i in range(config.n_layers):
+            layer_depth = i + 1
+
+            if config.use_swa:
+                is_first = layer_depth == 1
+                is_middle = layer_depth == (config.n_layers + 1) // 2
+                is_last = layer_depth == config.n_layers
+                swa = not (is_first or is_middle or is_last)
+            else:
+                swa = False
+                
+            blocks.append(Block(config, use_swa=swa, layer_depth=layer_depth))
+            
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.d_model),
-            h = nn.ModuleList([Block(config, layer_depth=i+1) for i in range(config.n_layers)]),
+            h = nn.ModuleList(blocks),
         ))
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
         self.lm_head.weight.data.zero_()
@@ -77,4 +91,3 @@ class Dragon(nn.Module):
             logits = None
 
         return logits, loss
-    

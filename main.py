@@ -21,7 +21,7 @@ from arch.data.distributed_data_loader import DistributedDataLoader
 
 # TODO:
 # GQA : test on regular attention, test for diffattn
-# add the rest of the hymba features : local/global attn (cf megatron), kv cache cross layer sharing, GQA
+# add the rest of the hymba features : kv cache cross layer sharing
 # stableSPAM ? or we stick with muon?
 # curse of depth
 # bigger model scale + bigger seqlen
