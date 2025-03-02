@@ -1,3 +1,5 @@
+from typing import List
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,6 +10,10 @@ from arch.mixer.mixer_attention import Attention, DiffAttention
     
 class Block(nn.Module):
     def __init__(self, config: NanoConfig, swa: bool = False, layer_depth: int = 0, kv_source=None):
+        """
+        swa: whether to use local attention/SWA for this block, or global
+        kv_source: layer to get KV from, if any
+        """
         super().__init__()
 
         match config.attn_type:
@@ -18,7 +24,7 @@ class Block(nn.Module):
             case _:
                 raise ValueError(f"Unknown attention type {config.attn_type}")
         
-        self.kv_source = kv_source # layer to get KV from, if any
+        self.kv_source = kv_source
         self.mlp = MLP(config)
 
     def forward(self, x):
@@ -34,8 +40,10 @@ class GPT(nn.Module):
     def __init__(self, config: NanoConfig):
         super().__init__()
         self.config = config
+        
+        # TODO: fuse the two loops?
 
-        temp_blocks = []
+        swas : List[bool] = [] # whether to use swa for each layer
         for i in range(config.n_layers):
             layer_depth = i + 1
 
@@ -47,27 +55,29 @@ class GPT(nn.Module):
             else:
                 swa = False
                 
-            temp_blocks.append((Block(config, swa=swa, layer_depth=layer_depth), swa))
+            swas.append(swa)
         
-        blocks = []
+        blocks : List[Block] = []
         for i in range(config.n_layers):
-            block, is_local = temp_blocks[i]
+            layer_depth = i + 1
+            is_local = swas[i]
 
             if not config.use_kv_sharing:
-                break
+                blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=None))
+                continue
             
             # KV sharing strategy
             if config.use_swa:
                 # global/local attn: share kv between consecutive local layers (globals are isolated kv-wise)
-                if is_local and i > 0 and temp_blocks[i-1][1]: # prev is local
+                if is_local and i > 0 and swas[i-1]: # prev is local
                     if blocks[i-1].kv_source is None: # prev doesn't have kv source
-                        block.kv_source = blocks[i-1]
+                        kv_source = blocks[i-1]
             else:
                 # full global attn: share between every 2 layers
                 if i > 0 and i % 2 == 1: # odd layers get KV from previous even layer
-                    block.kv_source = blocks[i-1]
+                    kv_source = blocks[i-1]
                 
-            blocks.append(block)
+            blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
             
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.d_model),
