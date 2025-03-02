@@ -26,7 +26,7 @@ from arch.data.distributed_data_loader import DistributedDataLoader
 # stableSPAM ? or we stick with muon?
 # curse of depth
 # bigger model scale + bigger seqlen
-# lr!! for muon, cf kimi paper
+# lr!! for muon, cf kimi paper (+https://x.com/jxbz/status/1895907289183518847)
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams?
 # next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
 
