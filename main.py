@@ -21,7 +21,7 @@ from arch.data.distributed_data_loader import DistributedDataLoader
 
 # TODO:
 # GQA : test on regular attention, test for diffattn
-# cross-layer v sharing : test
+# cross-layer kv sharing : test
 # add the rest of the hymba features : x
 # stableSPAM ? or we stick with muon?
 # curse of depth
