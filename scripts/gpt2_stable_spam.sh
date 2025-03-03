@@ -9,16 +9,16 @@ RUN_NAME=${1}
 NUM_GPUS=${2:-1}
 
 echo "RUN_NAME: $RUN_NAME"
-
+#comes from the stableSpam paper
 torchrun --nproc_per_node=$NUM_GPUS main.py \
     --run_name $RUN_NAME \
     --d_model 768 \
-    --n_head 12 \
-    --n_layer 12 \
+    --n_heads 12 \
+    --n_layers 12 \
     --optim stable-spam \
     --batch_size 512 \
     --device_batch_size 32 \
-    --learning_rate 8e-4 \ #comes from the stableSpam paper
+    --learning_rate 8e-4 \
     --num_iterations 1000 \
     --warmup_iters 50 \
     --warmdown_iters 150 \
@@ -30,4 +30,4 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --val_loss_every 125 \
     --val_tokens 10485760 \
     --save_every 0 \
-    --log_wandb True
+    --log_wandb

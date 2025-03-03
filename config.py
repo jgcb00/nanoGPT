@@ -71,7 +71,7 @@ class NanoConfig:
         # check for valid lin attn type
         assert self.lin_attn_type in ["mamba2", "gdn"]
         # check for valid optim type
-        assert self.optim in ["adamw", "spam", "muon"]
+        assert self.optim in ["adamw", "spam", "muon", "stable-spam"]
         # check for valid n_kv_heads
         if self.n_kv_heads == 0:
             self.n_kv_heads = self.n_heads
