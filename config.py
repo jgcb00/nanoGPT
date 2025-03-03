@@ -22,6 +22,9 @@ class NanoConfig:
     use_kv_sharing : bool = False # cross-layer KV sharing
     use_swa : bool = False # mix global and local attention (first, middle and last block) or use full global
     swa_window_size : int = 1024 # local attention window size
+    swa_warmup_iters: int = 0 # on how many iteratons to warmup the local attention window size (0=no warmup)
+    qk_norm: bool = True
+    scalable_softmax: bool = False
 
     # Mamba and GatedDeltaNet related
     rmsnorm: bool = False # whether to use an output norm (before proj)
@@ -76,3 +79,6 @@ class NanoConfig:
         if self.n_kv_heads == 0:
             self.n_kv_heads = self.n_heads
         assert self.n_heads % self.n_kv_heads == 0, "n_heads must be divisible by n_kv_heads"
+        if self.attn_type == "diff":
+            assert self.n_heads % 2 == 0, "n_heads must be even when using diff attention"
+            assert self.n_kv_heads % 2 == 0, "n_kv_heads must be even when using diff attention"

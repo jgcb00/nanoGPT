@@ -11,26 +11,31 @@ export WANDB_MODE=offline
 RUN_NAME=${1}
 NUM_GPUS=${2:-1}
 
+# WARNING!! MUON+DRAGON = bad perfs
+
 ARCH_ARGS=(
     --run_name $RUN_NAME
     --model gpt
     --d_model 768
-    --n_heads 6
+    --n_heads 12
     --n_layers 12
     --expand_factor 1
     --attn_type normal
-    --lin_attn_type gdn
+    --lin_attn_type mamba2
 )
 
 ATTENTION_ARGS=(
-    --n_kv_heads 6
+    --n_kv_heads 12
     --no-use_kv_sharing
-    --no-use_swa
-    --swa_window_size 1024
+    --use_swa
+    --swa_window_size 512
+    --swa_warmup_iters 100
+    --qk_norm
+    --scalable_softmax
 )
 
 MAMBA_ARGS=(
-    --rmsnorm
+    --no-rmsnorm
     --d_state 128
     --d_conv 4
     --headdim 64
@@ -44,7 +49,7 @@ GDN_ARGS=(
 )
 
 OPTIM_ARGS=(
-    --optim muon
+    --optim spam
     --batch_size 512
     --device_batch_size 32
     --num_iterations 1000
