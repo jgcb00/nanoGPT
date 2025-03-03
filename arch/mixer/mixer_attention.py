@@ -43,6 +43,7 @@ class MixerAttention(nn.Module):
         self.d_head = self.d_model // self.n_heads * config.expand_factor
         self.expand_factor = config.expand_factor
         self.swa, self.window_size = swa, config.swa_window_size
+        self.qk_norm = config.qk_norm
         assert self.d_model % self.n_heads == 0
         self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
         if not kv_share: # only define kv projs if not sharing
@@ -61,14 +62,14 @@ class MixerAttention(nn.Module):
             k, v = external_kv
 
             cos, sin = self.rotary(q)
-            q = F.rms_norm(q, (q.size(-1),)) # QK norm (only for q)
+            q = F.rms_norm(q, (q.size(-1),)) if self.qk_norm else q # QK norm (only for q)
             q = apply_rotary_emb(q, cos, sin) # RoPE
         else: # regular path
             k = self.c_k(x).view(B, T, self.n_kv_heads, self.d_head)
             v = self.c_v(x).view(B, T, self.n_kv_heads, self.d_head)
             
             cos, sin = self.rotary(q)
-            q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) # QK norm suggested by @Grad62304977
+            q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) if self.qk_norm else q,k # QK norm suggested by @Grad62304977
             q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
             
             self.last_k, self.last_v = k, v
@@ -106,6 +107,7 @@ class MixerDiffAttention(nn.Module):
         self.head_dim = self.d_model // self.n_heads * config.expand_factor
         self.expand_factor = config.expand_factor
         self.swa, self.window_size = swa, config.swa_window_size
+        self.qk_norm = config.qk_norm
         self.lambda_init = 0.8 - 0.6 * math.exp(-0.3 * layer_depth)
         
         head_dim = self.head_dim // 2
@@ -133,14 +135,14 @@ class MixerDiffAttention(nn.Module):
             k1, k2, v = external_kv
 
             cos, sin = self.rotary(q)
-            q = F.rms_norm(q, (q.size(-1),)) # QK norm (only for q)
+            q = F.rms_norm(q, (q.size(-1),)) if self.qk_norm else q # QK norm (only for q)
             q = apply_rotary_emb(q, cos, sin) # RoPE
         else: # regular path
             k = self.c_k(x).view(B, T, self.n_kv_heads, self.head_dim)
             v = self.c_v(x).view(B, T, self.n_kv_heads//2, 2*self.head_dim)
 
             cos, sin = self.rotary(q)
-            q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) # QK norm suggested by @Grad62304977
+            q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) if self.qk_norm else q,k # QK norm suggested by @Grad62304977
             q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
             
             # split k heads into two groups
@@ -180,14 +182,14 @@ class DiffAttention(MixerDiffAttention):
         y = self.c_proj(y)
         return y
 
-# Copied from transformers.models.llama.modeling_llama.repeat_kv
+# classic helper function for GQA, although the shapes are different
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     """
-    This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
-    num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
+    #From (batch, seqlen, num_key_value_heads, head_dim) to (batch, seqlen, num_attention_heads, head_dim)
+    #where num_attention_heads = num_key_value_heads * n_rep.
     """
-    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
+    batch, seqlen, num_key_value_heads, head_dim = hidden_states.shape
     if n_rep == 1:
         return hidden_states
-    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
-    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+    hidden_states = hidden_states[:, :, :, None, :].expand(batch, seqlen, num_key_value_heads, n_rep, head_dim)
+    return hidden_states.reshape(batch, seqlen, num_key_value_heads * n_rep, head_dim)

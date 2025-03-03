@@ -22,6 +22,7 @@ class NanoConfig:
     use_kv_sharing : bool = False # cross-layer KV sharing
     use_swa : bool = False # mix global and local attention (first, middle and last block) or use full global
     swa_window_size : int = 1024 # local attention window size
+    qk_norm: bool = True
 
     # Mamba and GatedDeltaNet related
     rmsnorm: bool = False # whether to use an output norm (before proj)
