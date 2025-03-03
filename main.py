@@ -1,6 +1,7 @@
 import itertools
 import os
 import sys
+import tyro
 import argparse
 with open(sys.argv[0]) as f:
     code = f.read() # read the code of this file ASAP, for logging
@@ -37,13 +38,7 @@ from arch.data.distributed_data_loader import DistributedDataLoader
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams?
 # next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser = NanoConfig.add_args(parser)
-    return parser.parse_args()
-
-args = parse_args()
-nconfig = NanoConfig.from_args(args)
+nconfig = tyro.cli(NanoConfig)
 assert nconfig.run_name != "", "Please provide a run name for this training run."
 
 # set up DDP (distributed data parallel). torchrun sets this env variable

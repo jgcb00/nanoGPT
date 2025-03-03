@@ -1,5 +1,4 @@
-from dataclasses import dataclass, asdict, field
-import argparse
+from dataclasses import dataclass
 
 @dataclass
 class NanoConfig:
@@ -72,17 +71,3 @@ class NanoConfig:
         assert self.optim in ["adamw", "spam", "muon"]
         # check for valid n_kv_heads
         assert self.n_heads % self.n_kv_heads == 0, "n_heads must be divisible by n_kv_heads"
-    
-    @staticmethod
-    def add_args(parent_parser):
-        parser = parent_parser.add_argument_group('NanoConfig')
-        for key, value in NanoConfig().__dict__.items():
-            arg_type = type(value)
-            parser.add_argument(f'--{key}', type=arg_type, default=value)
-        return parent_parser
-
-    @classmethod
-    def from_args(cls, args):
-        """Create config from argparse namespace."""
-        config_dict = {k: v for k, v in vars(args).items() if k in cls().__dict__}
-        return cls(**config_dict)
