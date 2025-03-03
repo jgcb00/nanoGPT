@@ -77,3 +77,6 @@ class NanoConfig:
         if self.n_kv_heads == 0:
             self.n_kv_heads = self.n_heads
         assert self.n_heads % self.n_kv_heads == 0, "n_heads must be divisible by n_kv_heads"
+        if self.attn_type == "diff":
+            assert self.n_heads % 2 == 0, "n_heads must be even when using diff attention"
+            assert self.n_kv_heads % 2 == 0, "n_kv_heads must be even when using diff attention"
