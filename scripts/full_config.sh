@@ -19,13 +19,13 @@ ARCH_ARGS=(
     --n_layers 12
     --expand_factor 1
     --attn_type normal
-    --lin_attn_type mamba2
+    --lin_attn_type gdn
 )
 
 ATTENTION_ARGS=(
     --n_kv_heads 6
     --no-use_kv_sharing
-    --use_swa
+    --no-use_swa
     --swa_window_size 1024
 )
 

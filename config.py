@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+# todo: on pourra utiliser un typing union pour forcer certaines valeurs c'est plus propre
+
 @dataclass
 class NanoConfig:
     # model
