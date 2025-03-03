@@ -149,7 +149,6 @@ class MixerGatedDeltaNet(nn.Module):
         hidden_states: (b, l, d)
         Returns: same shape as hidden_states
         """
-        _, batch, dim = hidden_states.shape
 
         qkvba = self.in_proj(hidden_states) # (b, l, D)
         
