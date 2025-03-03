@@ -6,6 +6,8 @@ import flex_head_fa
 from config import NanoConfig
 import math
 
+#todo: rename head_dim in diffattn to d_head just like in mixer_attention
+
 class Rotary(torch.nn.Module):
     def __init__(self, dim, base=10000):
         super().__init__()
@@ -44,12 +46,15 @@ class MixerAttention(nn.Module):
         self.expand_factor = config.expand_factor
         self.swa, self.window_size = swa, config.swa_window_size
         self.qk_norm = config.qk_norm
+        self.scalable_softmax = config.scalable_softmax
         assert self.d_model % self.n_heads == 0
         self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
         if not kv_share: # only define kv projs if not sharing
             self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
             self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
         self.rotary = Rotary(self.d_head)
+        if self.scalable_softmax:
+            self.softmax_scaler = nn.Parameter(torch.ones(1, 1, self.n_heads, 1))
         self.last_k = None
         self.last_v = None
 
@@ -73,6 +78,11 @@ class MixerAttention(nn.Module):
             q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
             
             self.last_k, self.last_v = k, v
+        
+        if self.scalable_softmax:
+            # scalable-softmax (https://arxiv.org/abs/2501.19399): multiply q by s*log(n)
+            log_pos = torch.arange(1, T + 1, device=q.device).view(1, T, 1, 1).float().log()
+            q = (self.softmax_scaler * log_pos) * q
         
         k, v = repeat_kv(k, self.n_kv_groups), repeat_kv(v, self.n_kv_groups) # GQA
         
@@ -108,6 +118,7 @@ class MixerDiffAttention(nn.Module):
         self.expand_factor = config.expand_factor
         self.swa, self.window_size = swa, config.swa_window_size
         self.qk_norm = config.qk_norm
+        self.scalable_softmax = config.scalable_softmax
         self.lambda_init = 0.8 - 0.6 * math.exp(-0.3 * layer_depth)
         
         head_dim = self.head_dim // 2
@@ -122,6 +133,8 @@ class MixerDiffAttention(nn.Module):
             self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.head_dim, bias=False)
             self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.head_dim, bias=False)
         self.rotary = Rotary(self.head_dim)
+        if self.scalable_softmax:
+            self.softmax_scaler = nn.Parameter(torch.ones(1, 1, self.n_heads, 1))
         self.last_k1 = None
         self.last_k2 = None
         self.last_v = None
@@ -150,7 +163,12 @@ class MixerDiffAttention(nn.Module):
             k1, k2 = k[:, :, 0], k[:, :, 1]
             
             self.last_k1, self.last_k2, self.last_v = k1, k2, v
-        
+
+        if self.scalable_softmax:
+            # scalable-softmax (https://arxiv.org/abs/2501.19399): multiply q by s*log(n)
+            log_pos = torch.arange(1, T + 1, device=q.device).view(1, T, 1, 1).float().log()
+            q = (self.softmax_scaler * log_pos) * q
+            
         # split q heads into two groups
         q = q.view(B, T, 2, self.n_heads//2, self.head_dim)
         q1, q2 = q[:, :, 0], q[:, :, 1]
