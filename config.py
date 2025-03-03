@@ -18,7 +18,7 @@ class NanoConfig:
     layer_norm_scaling : bool = False # whether to scale layer norm by sqrt(layer_depth)
 
     # Attention related
-    n_kv_heads : int = 3
+    n_kv_heads : int = 0
     use_kv_sharing : bool = False # cross-layer KV sharing
     use_swa : bool = False # mix global and local attention (first, middle and last block) or use full global
     swa_window_size : int = 1024 # local attention window size
@@ -73,4 +73,6 @@ class NanoConfig:
         # check for valid optim type
         assert self.optim in ["adamw", "spam", "muon"]
         # check for valid n_kv_heads
+        if self.n_kv_heads == 0:
+            self.n_kv_heads = self.n_heads
         assert self.n_heads % self.n_kv_heads == 0, "n_heads must be divisible by n_kv_heads"

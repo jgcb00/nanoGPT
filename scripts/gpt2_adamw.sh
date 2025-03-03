@@ -13,6 +13,7 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --d_model 768 \
     --n_heads 12 \
     --n_layers 12 \
+    --n_kv_heads 12 \
     --optim adamw \
     --batch_size 512 \
     --device_batch_size 32 \
