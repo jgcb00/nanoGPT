@@ -45,16 +45,7 @@ class GPT(nn.Module):
 
         swas : List[bool] = [] # whether to use swa for each layer
         for i in range(config.n_layers):
-            layer_depth = i + 1
-
-            if config.use_swa:
-                is_first = layer_depth == 1
-                is_middle = layer_depth == (config.n_layers + 1) // 2
-                is_last = layer_depth == config.n_layers
-                swa = not (is_first or is_middle or is_last)
-            else:
-                swa = False
-                
+            swa = (i%2 == 1)
             swas.append(swa)
         
         blocks : List[Block] = []
