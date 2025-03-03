@@ -69,7 +69,7 @@ class MixerAttention(nn.Module):
             v = self.c_v(x).view(B, T, self.n_kv_heads, self.d_head)
             
             cos, sin = self.rotary(q)
-            q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) if self.qk_norm else q,k # QK norm suggested by @Grad62304977
+            q, k = (F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),))) if self.qk_norm else (q, k) # QK norm suggested by @Grad62304977
             q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
             
             self.last_k, self.last_v = k, v
@@ -142,7 +142,7 @@ class MixerDiffAttention(nn.Module):
             v = self.c_v(x).view(B, T, self.n_kv_heads//2, 2*self.head_dim)
 
             cos, sin = self.rotary(q)
-            q, k = F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),)) if self.qk_norm else q,k # QK norm suggested by @Grad62304977
+            q, k = (F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),))) if self.qk_norm else (q, k) # QK norm suggested by @Grad62304977
             q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
             
             # split k heads into two groups

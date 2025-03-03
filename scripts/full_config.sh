@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
-#source /leonardo_work/BOOST_LCustodi/script/training/flex_fa_training_env/bin/activate
+module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
+source /leonardo_work/BOOST_LCustodi/script/training/flex_fa_training_env/bin/activate
 
 #export CUDA_VISIBLE_DEVICES=0
 export CUDA_DEVICE_MAX_CONNECTIONS=1
@@ -20,12 +20,12 @@ ARCH_ARGS=(
     --n_heads 12
     --n_layers 12
     --expand_factor 1
-    --attn_type normal
+    --attn_type diff
     --lin_attn_type mamba2
 )
 
 ATTENTION_ARGS=(
-    --n_kv_heads 3
+    --n_kv_heads 12
     --no-use_kv_sharing
     --no-use_swa
     --swa_window_size 1024
