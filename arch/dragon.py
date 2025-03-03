@@ -78,9 +78,10 @@ class Dragon(nn.Module):
         for i in range(config.n_layers):
             layer_depth = i + 1
             is_local = swas[i]
+            kv_source = None
 
             if not config.use_kv_sharing:
-                blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=None))
+                blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
                 continue
             
             # KV sharing strategy

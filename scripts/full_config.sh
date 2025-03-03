@@ -1,5 +1,8 @@
 #!/bin/bash
 
+module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
+source /leonardo_work/BOOST_LCustodi/script/training/flex_fa_training_env/bin/activate
+
 #export CUDA_VISIBLE_DEVICES=0
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export WANDB_MODE=offline
@@ -21,7 +24,7 @@ ARCH_ARGS=(
 
 ATTENTION_ARGS=(
     --n_kv_heads 6
-    --no-use_kv_sharing
+    --use_kv_sharing
     --no-use_swa
     --swa_window_size 1024
 )
@@ -63,7 +66,7 @@ EVAL_ARGS=(
     --val_loss_every 125
     --val_tokens 10485760
     --save_every 0
-    --no-log_wandb
+    --log_wandb
 )
 
 torchrun --nproc_per_node=$NUM_GPUS main.py \
