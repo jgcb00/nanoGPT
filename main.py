@@ -98,7 +98,7 @@ x, y = train_loader.next_batch()
 # there are only 50257 unique GPT-2 tokens; we extend to nearest multiple of 128 for efficiency. suggested to me by @Grad62304977.
 # this originates from Karpathy's experiments.
 num_vocab = 50304
-match args.model:
+match nconfig.model:
     case 'gpt':
         from arch.gpt import GPT
         model = GPT(nconfig)
@@ -107,7 +107,7 @@ match args.model:
         model = Dragon(nconfig)
         pass
     case _:
-        raise ValueError(f"Model {args.model} not supported")        
+        raise ValueError(f"Model {nconfig.model} not supported")        
 
 #count parameters
 num_params = sum(p.numel() for p in model.parameters())

@@ -43,7 +43,7 @@ GDN_ARGS=(
 OPTIM_ARGS=(
     --optim muon
     --batch_size 512
-    --device_batch_size 64
+    --device_batch_size 32
     --num_iterations 1000
     --learning_rate 1e-4
     --warmup_iters 0
