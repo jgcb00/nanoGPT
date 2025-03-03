@@ -45,7 +45,6 @@ class Block(nn.Module):
         # register here to not break torch_dynamo
         self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth) if config.layer_norm_scaling else 1.0))
 
-
     def forward(self, x):
         external_kv = None
         if self.kv_source is not None:
