@@ -2,7 +2,7 @@
 
 #export CUDA_VISIBLE_DEVICES=0
 export CUDA_DEVICE_MAX_CONNECTIONS=1
-#export WANDB_MODE=offline
+export WANDB_MODE=offline
 
 # Usage: bash gpt2_adamw.sh [RUN_NAME] [NUM_GPUS=1]
 RUN_NAME=${1}
@@ -14,10 +14,10 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --attn_type normal \
     --lin_attn_type gdn \
     --d_model 768 \
-    --n_head 12 \
-    --n_layer 7 \
+    --n_heads 12 \
+    --n_layers 7 \
     --expand_factor 2 \
-    --optim spam \
+    --optim adamw \
     --batch_size 512 \
     --device_batch_size 32 \
     --learning_rate 1.0e-3 \
@@ -32,4 +32,4 @@ torchrun --nproc_per_node=$NUM_GPUS main.py \
     --val_loss_every 125 \
     --val_tokens 10485760 \
     --save_every 0 \
-    --log_wandb True
+    --log_wandb

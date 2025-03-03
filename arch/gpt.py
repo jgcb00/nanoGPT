@@ -1,5 +1,5 @@
 from typing import List
-
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -26,14 +26,16 @@ class Block(nn.Module):
         
         self.kv_source = kv_source
         self.mlp = MLP(config)
+        # register here to not break torch_dynamo
+        self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth) if config.layer_norm_scaling else 1.0))
 
     def forward(self, x):
         external_kv = None
         if self.kv_source is not None:
             external_kv = self.kv_source.attn.get_kv()
             
-        x = x + self.attn(F.rms_norm(x, (x.size(-1),)), external_kv=external_kv)
-        x = x + self.mlp(F.rms_norm(x, (x.size(-1),)))
+        x = x + self.attn(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)), external_kv=external_kv)
+        x = x + self.mlp(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)))
         return x
 
 class GPT(nn.Module):

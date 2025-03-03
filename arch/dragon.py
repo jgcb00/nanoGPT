@@ -3,6 +3,7 @@ from typing import List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 from config import NanoConfig
 from arch.mlp import MLP
@@ -41,16 +42,19 @@ class Block(nn.Module):
         self.mamba_norm = torch.nn.Parameter(torch.ones(config.expand_factor*config.d_model))
         self.mlp = MLP(config)
         self.expand_factor = config.expand_factor
+        # register here to not break torch_dynamo
+        self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth) if config.layer_norm_scaling else 1.0))
+
 
     def forward(self, x):
         external_kv = None
         if self.kv_source is not None:
             external_kv = self.kv_source.attn.get_kv()
 
-        hidden = F.rms_norm(x, (x.size(-1),))
+        hidden = self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),))
         y = F.rms_norm(self.attn(hidden, external_kv=external_kv), (hidden.size(-1) * self.expand_factor,), self.attn_norm) + F.rms_norm(self.lin_attn(hidden), (hidden.size(-1) * self.expand_factor,), self.mamba_norm)
         x = x + self.out_proj(y / 2)
-        x = x + self.mlp(F.rms_norm(x, (x.size(-1),)))
+        x = x + self.mlp(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)))
         return x
 
 class Dragon(nn.Module):
