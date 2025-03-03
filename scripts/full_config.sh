@@ -27,8 +27,9 @@ ARCH_ARGS=(
 ATTENTION_ARGS=(
     --n_kv_heads 12
     --no-use_kv_sharing
-    --no-use_swa
+    --use_swa
     --swa_window_size 512
+    --swa_warmup_iters 100
     --qk_norm
     --scalable_softmax
 )

@@ -210,6 +210,12 @@ for step in range(nconfig.num_iterations + 1):
         t0 = time.time()
     timed_steps = float('nan') if step <= 11 else (step - 10) + 1 # <= 11 to avoid bug in val
 
+    # update the local/swa window size (start at 64, and increase by 64 gradually over swa_warmup_iters)
+    if nconfig.use_swa and nconfig.swa_warmup_iters > 0:
+        swa_window_size = int(min(64*((step/nconfig.swa_warmup_iters * (nconfig.swa_window_size - 64) + 64)//64), nconfig.swa_window_size))
+        for block in raw_model.transformer.h:
+            block.attn.window_size = swa_window_size
+
     # once in a while evaluate the validation dataset
     if (last_step or (nconfig.val_loss_every > 0 and step % nconfig.val_loss_every == 0)):
         # stop the clock

@@ -22,6 +22,7 @@ class NanoConfig:
     use_kv_sharing : bool = False # cross-layer KV sharing
     use_swa : bool = False # mix global and local attention (first, middle and last block) or use full global
     swa_window_size : int = 1024 # local attention window size
+    swa_warmup_iters: int = 0 # on how many iteratons to warmup the local attention window size (0=no warmup)
     qk_norm: bool = True
     scalable_softmax: bool = False
 
