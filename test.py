@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from config import NanoConfig
-from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention
+from arch.mixer.mixer_attention import MixerAttention, DiffAttention
 
 # Set up configuration
 config = NanoConfig()
@@ -22,10 +22,10 @@ class MyModel(nn.Module):
     def __init__(self, config):
         super(MyModel, self).__init__()
         self.blocks = nn.ModuleList([
-            MixerDiffAttention(config, swa=False),
-            MixerDiffAttention(config, swa=False),
-            MixerDiffAttention(config, swa=False),
-            MixerDiffAttention(config, swa=False)
+            DiffAttention(config, swa=False),
+            DiffAttention(config, swa=False),
+            DiffAttention(config, swa=False),
+            DiffAttention(config, swa=False)
         ])
 
     def forward(self, x, caches=None):

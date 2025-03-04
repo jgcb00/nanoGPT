@@ -9,6 +9,8 @@ import math
 #todo: rename head_dim in diffattn to d_head just like in mixer_attention
 #todo: convert back to float32 after attn?
 
+#todo: is the pos in the cache really useful??
+
 class Rotary(torch.nn.Module):
     def __init__(self, dim, base=10000):
         super().__init__()
@@ -114,6 +116,9 @@ class MixerAttention(nn.Module):
     def get_kv(self):
         """ used for cross-layer kv sharing """
         return self.last_k, self.last_v
+    
+    def get_empty_cache(self):
+        return (None, None, 0)
 
 class Attention(MixerAttention):
     def __init__(self, config: NanoConfig, swa: bool, kv_share: bool = False):
@@ -221,6 +226,9 @@ class MixerDiffAttention(nn.Module):
         
     def get_kv(self):
         return self.last_k1, self.last_k2, self.last_v
+    
+    def get_empty_cache(self):
+        return (None, None, None, 0)
 
 class DiffAttention(MixerDiffAttention):
     def __init__(self, config: NanoConfig, swa: bool, kv_share: bool = False, layer_depth: int = 0):

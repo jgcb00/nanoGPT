@@ -7,4 +7,4 @@ source /leonardo_work/BOOST_LCustodi/script/training/flex_fa_training_env/bin/ac
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export WANDB_MODE=offline
 
-python test.py
+python test_gpt.py
