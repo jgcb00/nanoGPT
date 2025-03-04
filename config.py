@@ -68,7 +68,7 @@ class NanoConfig:
     
     def __post_init__(self):
         # check for valid model
-        assert self.model in ["gpt", "dragon"]
+        assert self.model in ["gpt", "dragon", "gated-delta-net"]
         # check for valid attention type
         assert self.attn_type in ["normal", "diff"]
         # check for valid lin attn type

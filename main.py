@@ -20,6 +20,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 
+from arch.optim.filter_optimizer import create_filtered_optimizer, create_2D_filtered_optimizer
+
 # TODO:
 
 # tests
@@ -106,6 +108,9 @@ match nconfig.model:
         from arch.dragon import Dragon
         model = Dragon(nconfig)
         pass
+    case 'gated-delta-net':
+        from arch.gated_delta_net import GatedDeltaNetModel
+        model = GatedDeltaNetModel(nconfig)
     case _:
         raise ValueError(f"Model {nconfig.model} not supported")        
 
@@ -135,31 +140,9 @@ match nconfig.optim:
         from arch.optim.muon import Muon
         optimizer1 = AdamW([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), fused=True)
         optimizer2 = AdamW([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), fused=True)
-        optimizers = [optimizer1, optimizer2]
-        match nconfig.model:
-            case 'gpt':
-                match nconfig.attn_type:
-                    case 'normal':
-                        optimizer3 = Muon(raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
-                        optimizers.append(optimizer3)
-                    case 'diff':
-                        optimizer3 = Muon([
-                            *itertools.chain.from_iterable(block.mlp.parameters() for block in raw_model.transformer.h),
-                            *[block.attn.c_q.weight for block in raw_model.transformer.h],
-                            *[block.attn.c_k.weight for block in raw_model.transformer.h],
-                            *[block.attn.c_v.weight for block in raw_model.transformer.h],
-                            *[block.attn.c_proj.weight for block in raw_model.transformer.h],
-                        ], lr=nconfig.learning_rate, momentum=0.95)
-                        optimizers.append(optimizer3)
-                        optimizer4 = AdamW([
-                            *[block.attn.lambda_q1 for block in raw_model.transformer.h],
-                            *[block.attn.lambda_k1 for block in raw_model.transformer.h],
-                            *[block.attn.lambda_q2 for block in raw_model.transformer.h],
-                            *[block.attn.lambda_k2 for block in raw_model.transformer.h],
-                        ], lr=1.8e-3, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
-                        optimizers.append(optimizer4)
-            case 'dragon':
-                pass
+        optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
+        optimizer4 = create_filtered_optimizer(AdamW, raw_model.transformer.h.parameters(), lr=1e-3, betas=(0.9, 0.95), fused=True)
+        optimizers = [optimizer1, optimizer2, optimizer3, optimizer4]
     case 'upgraded-muon':
         from arch.optim.spam import SPAMAdamW
         from arch.optim.muon import Muon
