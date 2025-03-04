@@ -27,7 +27,7 @@ ARCH_ARGS=(
 ATTENTION_ARGS=(
     --n_kv_heads 12
     --no-use_kv_sharing
-    --use_swa
+    --no-use_swa
     --swa_window_size 512
     --swa_warmup_iters 100
     --qk_norm
@@ -52,7 +52,7 @@ OPTIM_ARGS=(
     --optim spam
     --batch_size 512
     --device_batch_size 32
-    --num_iterations 1000
+    --num_iterations 800
     --learning_rate 1e-4
     --warmup_iters 0
     --warmdown_iters 150
