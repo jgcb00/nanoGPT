@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from config import NanoConfig
-from arch.mixer.mixer_attention import MixerAttention
+from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention
 
 # Set up configuration
 config = NanoConfig()
@@ -22,10 +22,10 @@ class MyModel(nn.Module):
     def __init__(self, config):
         super(MyModel, self).__init__()
         self.blocks = nn.ModuleList([
-            MixerAttention(config, swa=False),
-            MixerAttention(config, swa=False),
-            MixerAttention(config, swa=False),
-            MixerAttention(config, swa=False)
+            MixerDiffAttention(config, swa=False),
+            MixerDiffAttention(config, swa=False),
+            MixerDiffAttention(config, swa=False),
+            MixerDiffAttention(config, swa=False)
         ])
 
     def forward(self, x, caches=None):
@@ -49,7 +49,7 @@ print(f"Full sequence output shape: {y_full.shape}")
 
 # Process the sequence token-by-token (inference mode)
 y_step = []
-caches = [(None, None, 0) for _ in range(len(model.blocks))]
+caches = [(None, None, None, 0) for _ in range(len(model.blocks))]
 
 for i in range(seq_len):
     token = x[:, i:i+1, :] # (1, 1, d_model)
