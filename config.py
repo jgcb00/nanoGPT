@@ -5,7 +5,7 @@ from dataclasses import dataclass
 @dataclass
 class NanoConfig:
     # model
-    model : str = "gpt" #gpt or dragon
+    model : str = "mamba" #gpt or dragon or gated-delta-net or mamba2
     run_name : str = ""
     
     # arch - general
@@ -69,7 +69,7 @@ class NanoConfig:
     
     def __post_init__(self):
         # check for valid model
-        assert self.model in ["gpt", "dragon", "gated-delta-net"]
+        assert self.model in ["gpt", "dragon", "gated-delta-net", "mamba2"]
         # check for valid attention type
         assert self.attn_type in ["normal", "diff"]
         # check for valid lin attn type

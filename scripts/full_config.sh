@@ -15,10 +15,10 @@ NUM_GPUS=${2:-1}
 
 ARCH_ARGS=(
     --run_name $RUN_NAME
-    --model dragon
+    --model mamba2
     --d_model 768
     --n_heads 12
-    --n_layers 7
+    --n_layers 12
     --expand_factor 2
     --attn_type normal
     --lin_attn_type mamba2
@@ -36,7 +36,7 @@ ATTENTION_ARGS=(
 )
 
 MAMBA_ARGS=(
-    --no-rmsnorm
+    --rmsnorm
     --d_state 128
     --d_conv 4
     --headdim 64
