@@ -126,6 +126,8 @@ class GPT_LM(LM):
             if 'until' in kwargs:
                 until = kwargs['until']
                 stop_tokens = [self.enc.encode(token)[0] for token in until]
+            else:
+                stop_tokens = None
             
             if 'max_gen_toks' in kwargs:
                 max_gen_toks = kwargs['max_gen_toks']
@@ -143,7 +145,7 @@ class GPT_LM(LM):
                 temperature = 1.
 
             input_enc = self.enc.encode(input_str)
-            generated = self.model.generate(prompts=[input_enc], n_tokens=max_gen_toks, sample=do_sample, temperature=temperature, stop_tokens=stop_tokens) # list of B x (L) tensors
+            generated = self.model.generate(prompts=[torch.tensor(input_enc)], n_tokens=[max_gen_toks], sample=do_sample, temperature=temperature, stop_tokens=[stop_tokens]) # list of B x (L) tensors
 
             print(generated)
 

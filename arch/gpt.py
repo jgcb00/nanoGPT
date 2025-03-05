@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 import math
 import torch
 import torch.nn as nn
@@ -157,14 +157,14 @@ class GPT(nn.Module):
 
         return generated.to(input_device)[:, -n_tokens:]
     
-    def generate(self, prompts, n_tokens: List[int], sample: bool = True, top_k: int = None, temperature: float = 1.0, stop_tokens: List[int] = None):
+    def generate(self, prompts, n_tokens: List[int], sample: bool = True, top_k: int = None, temperature: float = 1.0, stop_tokens: List[Optional[List[int]]] = None):
         # prompts : list of B x (L) tensors
 
         B = len(prompts)
         min_len = min(prompt.size(0) for prompt in prompts)
         max_len = max(prompt.size(0) for prompt in prompts)
         max_num_tokens = max(n_tokens)
-        max_len_generation = max([len(p) + nt for (p, nt) in zip(prompts, n_tokens)]) # max timestep that wil be reached during generation
+        max_len_generation = max([p.size(0) + nt for (p, nt) in zip(prompts, n_tokens)]) # max timestep that wil be reached during generation
         assert min_len >= self.config.d_conv
         assert top_k is None or top_k <= self.config.vocab_size
 
@@ -184,9 +184,13 @@ class GPT(nn.Module):
         active_mask = position_ids < prompt_lengths.unsqueeze(1)
         active_mask = active_mask.to(model_device)
 
-        finished = torch.zeros(B, dtype=torch.bool, device=model_device) # track finished sequences
         if stop_tokens is None:
-            stop_tokens = []
+            stop_tokens = [[] for _ in range(B)]
+        else:
+            if len(stop_tokens) != B:
+                raise ValueError("stop_tokens must have the same length as prompts")
+            stop_tokens = [st if st is not None else [] for st in stop_tokens]
+        finished = [False] * B
 
         # caches is a list of cache, one per layer
         # cache is composed of : - if Mamba(2) layer : the hidden state, and the last d_conv-1 inputs (see more in mamba_lm.py)
@@ -211,21 +215,19 @@ class GPT(nn.Module):
                 else:
                     next_token = next_token_logits.argmax(dim=-1, keepdim=True) # (B, 1)
 
-                tokens_generated = next_token.squeeze(1)
+                tokens_generated = next_token.squeeze(1) # (B,)
 
                 # check stop tokens for each sequence
-                if stop_tokens:
-                    stop_token_generated = torch.zeros_like(tokens_generated, dtype=torch.bool)
-                    for stop_token in stop_tokens:
-                        stop_token_generated |= (tokens_generated == stop_token)
-                    finished |= stop_token_generated
+                for i in range(B):
+                    if not finished[i] and stop_tokens[i] and (tokens_generated[i].item() in stop_tokens[i]):
+                        finished[i] = True
+
+                if all(finished[i] for i in range(B) if stop_tokens[i]):
+                    break
 
                 # only update tokens for sequences not yet finished and not in prompt positions
-                update_mask = (~finished) & (~active_mask[:, t])
+                update_mask = (~active_mask[:, t]) & torch.tensor([not f for f in finished], device=model_device)
                 batched_generated[:, t] = torch.where(update_mask, tokens_generated, batched_generated[:, t])
-
-                if finished.all():
-                    break
 
                 next_token_logits, caches = self.forward(batched_generated[:, [t]], targets=None, caches=caches) # (B, 1, vocab_size), caches
                 next_token_logits = next_token_logits.squeeze(1) # (B, vocab_size)
@@ -236,10 +238,9 @@ class GPT(nn.Module):
         for i, (seq, nt) in enumerate(zip(batched_generated, n_tokens)):
             start = prompts[i].size(0)
             gen_seq = seq[start: start + nt].to(input_device)
-            # Cut off at first stop token if present
-            if stop_tokens:
+            if stop_tokens[i]:
                 tokens = gen_seq.tolist()
-                cut_idx = next((idx for idx, token in enumerate(tokens) if token in stop_tokens), None)
+                cut_idx = next((idx for idx, token in enumerate(tokens) if token in stop_tokens[i]), None)
                 if cut_idx is not None:
                     gen_seq = gen_seq[:cut_idx]
             generated.append(gen_seq)
