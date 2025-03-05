@@ -157,21 +157,16 @@ class GPT(nn.Module):
 
         return generated.to(input_device)[:, -n_tokens:]
     
-    def generate(self, prompts, n_tokens: List[int], sample: bool = True, top_k: int = None, temperature: float = 1.0):
+    def generate(self, prompts, n_tokens: List[int], sample: bool = True, top_k: int = None, temperature: float = 1.0, stop_tokens: List[int] = None):
         # prompts : list of B x (L) tensors
 
         B = len(prompts)
         min_len = min(prompt.size(0) for prompt in prompts)
         max_len = max(prompt.size(0) for prompt in prompts)
-
         max_num_tokens = max(n_tokens)
-
         max_len_generation = max([len(p) + nt for (p, nt) in zip(prompts, n_tokens)]) # max timestep that wil be reached during generation
-
         assert min_len >= self.config.d_conv
-            
-        if top_k is not None:
-            top_k = min(top_k, self.config.vocab_size)
+        assert top_k is None or top_k <= self.config.vocab_size
 
         input_device = prompts[0].device
         model_device = self.transformer.wte.weight.device
@@ -179,7 +174,7 @@ class GPT(nn.Module):
         self.eval()
         
         padded_prompts = [F.pad(prompt, (0, max_len-prompt.size(0))) for prompt in prompts]
-        padded_prompts = torch.stack(padded_prompts) # to : model_device?
+        padded_prompts = torch.stack(padded_prompts)
         
         batched_generated = torch.zeros(B, max_len+max_num_tokens, dtype=torch.long, device=model_device)
         batched_generated[:, :max_len] = padded_prompts
@@ -188,6 +183,10 @@ class GPT(nn.Module):
         position_ids = torch.arange(max_len+max_num_tokens, device=input_device).unsqueeze(0).expand(B, -1)
         active_mask = position_ids < prompt_lengths.unsqueeze(1)
         active_mask = active_mask.to(model_device)
+
+        finished = torch.zeros(B, dtype=torch.bool, device=model_device) # track finished sequences
+        if stop_tokens is None:
+            stop_tokens = []
 
         # caches is a list of cache, one per layer
         # cache is composed of : - if Mamba(2) layer : the hidden state, and the last d_conv-1 inputs (see more in mamba_lm.py)
@@ -212,15 +211,36 @@ class GPT(nn.Module):
                 else:
                     next_token = next_token_logits.argmax(dim=-1, keepdim=True) # (B, 1)
 
-                # here, choose if modify batched_generated[:, t] with next_token or leave it as is
+                tokens_generated = next_token.squeeze(1)
 
-                update_mask = ~active_mask[:, t]
-                batched_generated[:, t] = torch.where(update_mask, next_token.squeeze(1), batched_generated[:, t])
+                # check stop tokens for each sequence
+                if stop_tokens:
+                    stop_token_generated = torch.zeros_like(tokens_generated, dtype=torch.bool)
+                    for stop_token in stop_tokens:
+                        stop_token_generated |= (tokens_generated == stop_token)
+                    finished |= stop_token_generated
+
+                # only update tokens for sequences not yet finished and not in prompt positions
+                update_mask = (~finished) & (~active_mask[:, t])
+                batched_generated[:, t] = torch.where(update_mask, tokens_generated, batched_generated[:, t])
+
+                if finished.all():
+                    break
 
                 next_token_logits, caches = self.forward(batched_generated[:, [t]], targets=None, caches=caches) # (B, 1, vocab_size), caches
                 next_token_logits = next_token_logits.squeeze(1) # (B, vocab_size)
 
         self.train()
 
-        generated = [seq[prompts[i].size(0):prompts[i].size(0) + nt].to(input_device) for i, (seq, nt) in enumerate(zip(batched_generated, n_tokens))]
+        generated = []
+        for i, (seq, nt) in enumerate(zip(batched_generated, n_tokens)):
+            start = prompts[i].size(0)
+            gen_seq = seq[start: start + nt].to(input_device)
+            # Cut off at first stop token if present
+            if stop_tokens:
+                tokens = gen_seq.tolist()
+                cut_idx = next((idx for idx, token in enumerate(tokens) if token in stop_tokens), None)
+                if cut_idx is not None:
+                    gen_seq = gen_seq[:cut_idx]
+            generated.append(gen_seq)
         return generated

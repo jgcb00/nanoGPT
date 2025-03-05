@@ -6,5 +6,7 @@ source /leonardo_work/BOOST_LCustodi/script/training/flex_fa_training_env/bin/ac
 #export CUDA_VISIBLE_DEVICES=0
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export WANDB_MODE=offline
+export HF_DATASETS_OFFLINE=1
 
+#python try.py
 python lm_eval_tests.py
