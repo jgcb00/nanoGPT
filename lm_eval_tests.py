@@ -92,6 +92,7 @@ class GPT_LM(LM):
             outputs.append((lls[i], is_greedys[i]))
         return outputs
 
+    @torch.no_grad()
     def generate_until(self, requests: list[Instance]) -> list[str]:
         print("generate_until")
         print(len(requests))
@@ -145,7 +146,9 @@ class GPT_LM(LM):
                 temperature = 1.
 
             input_enc = self.enc.encode(input_str)
-            generated = self.model.generate(prompts=[torch.tensor(input_enc)], n_tokens=[max_gen_toks], sample=do_sample, temperature=temperature, stop_tokens=[stop_tokens]) # list of B x (L) tensors
+
+            with ctx:
+                generated = self.model.generate(prompts=[torch.tensor(input_enc)], n_tokens=[max_gen_toks], sample=do_sample, temperature=temperature, stop_tokens=[stop_tokens]) # list of B x (L) tensors
 
             print(generated)
 
