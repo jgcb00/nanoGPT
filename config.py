@@ -16,6 +16,7 @@ class NanoConfig:
     attn_type : str = "normal" # normal, diff
     lin_attn_type: str = "mamba2" # mamba2, gdn
     layer_norm_scaling : bool = False # whether to scale layer norm by sqrt(layer_depth)
+    fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
 
     # Attention related
     n_kv_heads : int = 0

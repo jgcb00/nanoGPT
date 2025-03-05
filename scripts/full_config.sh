@@ -22,6 +22,7 @@ ARCH_ARGS=(
     --expand_factor 1
     --attn_type normal
     --lin_attn_type mamba2
+    --fused_loss_computation
 )
 
 ATTENTION_ARGS=(
@@ -31,7 +32,7 @@ ATTENTION_ARGS=(
     --swa_window_size 512
     --swa_warmup_iters 100
     --qk_norm
-    --scalable_softmax
+    --no-scalable_softmax
 )
 
 MAMBA_ARGS=(
@@ -49,7 +50,7 @@ GDN_ARGS=(
 )
 
 OPTIM_ARGS=(
-    --optim spam
+    --optim muon
     --batch_size 512
     --device_batch_size 32
     --num_iterations 1000
