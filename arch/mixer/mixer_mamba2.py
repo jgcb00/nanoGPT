@@ -121,7 +121,7 @@ class MixerMamba2(nn.Module):
         self.D = nn.Parameter(torch.ones(self.d_ssm if self.D_has_hdim else self.nheads, device=device))
         self.D._no_weight_decay = True
 
-        assert not(config.model == "dragon" and self.rmsnorm), "When using Dragon, no output norm should be used."
+        # assert not(config.model == "dragon" and self.rmsnorm), "When using Dragon, no output norm should be used."
         if self.rmsnorm:
             assert RMSNormGated is not None
             self.norm = RMSNormGated(self.d_ssm, eps=1e-5, norm_before_gate=self.norm_before_gate,

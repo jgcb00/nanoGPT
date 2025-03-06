@@ -39,7 +39,9 @@ class Block(nn.Module):
         self.out_proj = nn.Linear(config.expand_factor*config.d_model, config.d_model, bias=False)
         self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
         self.attn_norm = torch.nn.Parameter(torch.ones(config.expand_factor*config.d_model))
-        self.mamba_norm = torch.nn.Parameter(torch.ones(config.expand_factor*config.d_model))
+        self.lin_attn_norm = config.rmsnorm
+        if not config.rmsnorm:
+            self.mamba_norm = torch.nn.Parameter(torch.ones(config.expand_factor*config.d_model))
         self.mlp = MLP(config)
         self.expand_factor = config.expand_factor
         # register here to not break torch_dynamo
@@ -51,7 +53,11 @@ class Block(nn.Module):
             external_kv = self.kv_source.attn.get_kv()
 
         hidden = self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),))
-        y = F.rms_norm(self.attn(hidden, external_kv=external_kv), (hidden.size(-1) * self.expand_factor,), self.attn_norm) + F.rms_norm(self.lin_attn(hidden), (hidden.size(-1) * self.expand_factor,), self.mamba_norm)
+        y = F.rms_norm(self.attn(hidden, external_kv=external_kv), (hidden.size(-1) * self.expand_factor,), self.attn_norm)
+        if not self.lin_attn_norm:
+            y = y + F.rms_norm(self.lin_attn(hidden), (hidden.size(-1) * self.expand_factor,), self.mamba_norm)
+        else :
+            y = y + self.lin_attn(hidden)
         x = x + self.out_proj(y / 2)
         x = x + self.mlp(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)))
         return x

@@ -45,7 +45,12 @@ assert nconfig.run_name != "", "Please provide a run name for this training run.
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
-dist.init_process_group(backend='nccl')
+dist.init_process_group(
+    backend='nccl',
+    init_method='env://',
+    world_size=int(os.environ['WORLD_SIZE']),
+    rank=int(os.environ['RANK']),
+)
 ddp_rank = int(os.environ['RANK'])
 ddp_local_rank = int(os.environ['LOCAL_RANK'])
 ddp_world_size = int(os.environ['WORLD_SIZE'])
@@ -118,7 +123,7 @@ match nconfig.model:
 num_params = sum(p.numel() for p in model.parameters())
 print0(f"number of parameters: {num_params}")
 nconfig.num_params = num_params
-
+model = model.to(torch.bfloat16)
 model = model.cuda()
 model = torch.compile(model, dynamic=False)
 # here we wrap model into DDP container
@@ -148,7 +153,8 @@ match nconfig.optim:
         from arch.optim.muon import Muon
         optimizer1 = SPAMAdamW([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), weight_decay=0.01)
         optimizer2 = SPAMAdamW([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), weight_decay=0.01)
-        optimizer3 = Muon(raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
+        optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
+        optimizer4 = create_filtered_optimizer(SPAMAdamW, raw_model.transformer.h.parameters(), lr=1e-3, betas=(0.9, 0.95), fused=True)
         optimizers = [optimizer1, optimizer2, optimizer3]
         
     case 'stable-spam':
