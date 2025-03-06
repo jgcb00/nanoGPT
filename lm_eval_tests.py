@@ -109,6 +109,7 @@ class GPT_LM(LM):
             n_tokens_list = []
             samples = []
             temperatures = []
+            top_ks = []
             stop_tokens_list = []
 
             for request in batch:
@@ -135,18 +136,20 @@ class GPT_LM(LM):
                 else:
                     temperature = 1.
 
-                input_enc = self.enc.encode(input_str)
+                if 'top_k' in kwargs:
+                    top_k = kwargs['top_k']
 
-                #todo: extract top_k also?
+                input_enc = self.enc.encode(input_str)
 
                 prompts.append(torch.tensor(input_enc))
                 n_tokens_list.append(max_gen_toks)
                 samples.append(do_sample)
                 temperatures.append(temperature)
+                top_ks.append(top_k)
                 stop_tokens_list.append(stop_tokens)
 
             with ctx:
-                generated_batch = self.model.generate(prompts=prompts, n_tokens=n_tokens_list, samples=samples, temperatures=temperatures, stop_tokens=stop_tokens_list) # list of B (L) tensors
+                generated_batch = self.model.generate(prompts=prompts, n_tokens=n_tokens_list, samples=samples, temperatures=temperatures, top_ks=top_ks, stop_tokens=stop_tokens_list) # list of B (L) tensors
             
             for i in range(len(batch)):
                 generated = generated_batch[i]
