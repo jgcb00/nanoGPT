@@ -137,6 +137,8 @@ class GPT_LM(LM):
 
                 input_enc = self.enc.encode(input_str)
 
+                #todo: extract top_k also?
+
                 prompts.append(torch.tensor(input_enc))
                 n_tokens_list.append(max_gen_toks)
                 samples.append(do_sample)
@@ -144,8 +146,7 @@ class GPT_LM(LM):
                 stop_tokens_list.append(stop_tokens)
 
             with ctx:
-                #generated_batch = self.model.generate(prompts=prompts, n_tokens=n_tokens_list, sample=samples, temperature=temperatures, stop_tokens=stop_tokens_list) # list of B (L) tensors
-                generated_batch = self.model.generate(prompts=prompts, n_tokens=n_tokens_list, sample=False, temperature=1., stop_tokens=stop_tokens_list) # list of B (L) tensors
+                generated_batch = self.model.generate(prompts=prompts, n_tokens=n_tokens_list, samples=samples, temperatures=temperatures, stop_tokens=stop_tokens_list) # list of B (L) tensors
             
             for i in range(len(batch)):
                 generated = generated_batch[i]

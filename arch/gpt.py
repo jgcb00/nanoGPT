@@ -218,18 +218,21 @@ class GPT(nn.Module):
             next_token_logits = logits[:, -1] # (B, vocab_size)
 
             for t in range(min_len, max_len_generation):
-                if sample:
-                    probs = F.softmax(next_token_logits / temperature, dim=-1)
-
-                    if top_k is not None:
-                        values, _ = torch.topk(probs, k=top_k) # (B, k) ordered from lowest to biggest
-                        probs[probs < values[:, -1, None]] = 0 # zero-out all probs except the k first
-                        probs = probs / probs.sum(axis=1, keepdims=True)
-
-                    next_token = torch.multinomial(probs, num_samples=1) # (B, 1)
-                else:
-                    next_token = next_token_logits.argmax(dim=-1, keepdim=True) # (B, 1)
-
+                new_tokens_list = []
+                
+                for i in range(B):
+                    if samples[i]:
+                        prob = F.softmax(next_token_logits[i] / temperatures[i], dim=-1)
+                        if top_ks[i] is not None:
+                            values, _ = torch.topk(prob, k=top_ks[i])
+                            threshold = values[-1]
+                            prob = torch.where(prob < threshold, torch.tensor(0.0, device=prob.device), prob)
+                            prob = prob / (prob.sum() + 1e-8)
+                        token_i = torch.multinomial(prob, num_samples=1)
+                    else:
+                        token_i = next_token_logits[i].argmax().unsqueeze(0)
+                    new_tokens_list.append(token_i)
+                next_token = torch.stack(new_tokens_list, dim=0) # (B, 1)
                 tokens_generated = next_token.squeeze(1) # (B,)
 
                 # For finished sequences, reuse the previous token.
