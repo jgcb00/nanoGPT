@@ -120,24 +120,22 @@ class GPT_LM(LM):
                     stop_tokens = [self.enc.encode(token)[0] for token in until]
                 else:
                     stop_tokens = None
-                
                 if 'max_gen_toks' in kwargs:
                     max_gen_toks = kwargs['max_gen_toks']
                 else:
                     max_gen_toks = 1024
-                
                 if 'do_sample' in kwargs:
                     do_sample = kwargs['do_sample']
                 else:
                     do_sample = True
-
                 if 'temperature' in kwargs:
                     temperature = kwargs['temperature']
                 else:
                     temperature = 1.
-
                 if 'top_k' in kwargs:
                     top_k = kwargs['top_k']
+                else:
+                    top_k = None
 
                 input_enc = self.enc.encode(input_str)
 
@@ -162,13 +160,12 @@ class GPT_LM(LM):
         print("loglikelihood_rolling not implemented.")
         return
 
-#setup_logging("DEBUG")
-
 config = NanoConfig()
 config.d_model = 768
 config.n_heads = 12
 config.n_layers = 12
-config.vocab_size = 50257#50304 todo put 50304 but cap output to 50257
+config.vocab_size = 50304
+config.vocab_size_real = 50257
 
 model = GPT(config)
 model.cuda()

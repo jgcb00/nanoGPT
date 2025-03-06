@@ -182,7 +182,7 @@ class GPT(nn.Module):
             assert len(temperatures) == B, "Length of temperatures must equal number of prompts"
         for tk in top_ks:
             if tk is not None:
-                assert tk <= self.config.vocab_size, "top_k must be <= vocab_size"
+                assert tk <= self.config.vocab_size_real, "top_k must be <= vocab_size"
 
         input_device = prompts[0].device
         model_device = self.transformer.wte.weight.device
@@ -216,10 +216,11 @@ class GPT(nn.Module):
             # process prompt in one go
             logits, caches = self.forward(batched_generated[:, :min_len], targets=None, caches=caches) # (B, L, vocab_size)
             next_token_logits = logits[:, -1] # (B, vocab_size)
+            next_token_logits[:, self.config.vocab_size_real:] = -float("inf") # mask out the tokens that are not in the real vocab (used for efficiency reasons)
 
             for t in range(min_len, max_len_generation):
                 new_tokens_list = []
-                
+
                 for i in range(B):
                     if samples[i]:
                         prob = F.softmax(next_token_logits[i] / temperatures[i], dim=-1)
@@ -254,6 +255,7 @@ class GPT(nn.Module):
 
                 next_token_logits, caches = self.forward(batched_generated[:, [t]], targets=None, caches=caches) # (B, 1, vocab_size), caches
                 next_token_logits = next_token_logits.squeeze(1) # (B, vocab_size)
+                next_token_logits[:, self.config.vocab_size_real:] = -float("inf") # mask out the tokens that are not in the real vocab (used for efficiency reasons)
 
         self.train()
 
