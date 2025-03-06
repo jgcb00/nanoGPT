@@ -10,3 +10,4 @@ export HF_DATASETS_OFFLINE=1
 
 #python try.py
 python lm_eval_tests.py
+#python test_decode.py

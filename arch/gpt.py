@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 import math
 import torch
 import torch.nn as nn
@@ -157,7 +157,8 @@ class GPT(nn.Module):
 
         return generated.to(input_device)[:, -n_tokens:]
     
-    def generate(self, prompts, n_tokens: List[int], sample: bool = True, top_k: int = None, temperature: float = 1.0, stop_tokens: List[Optional[List[int]]] = None):
+    # todo: sampleS, top_kS, temperatureS
+    def generate(self, prompts, n_tokens: List[int], samples: Union[bool, List[bool]] = True, top_ks: Union[None, int, List[Optional[int]]] = None, temperatures: Union[float, List[float]] = 1.0, stop_tokens: List[Optional[List[int]]] = None):
         # prompts : list of B x (L) tensors
 
         B = len(prompts)
@@ -166,7 +167,22 @@ class GPT(nn.Module):
         max_num_tokens = max(n_tokens)
         max_len_generation = max([p.size(0) + nt for (p, nt) in zip(prompts, n_tokens)]) # max timestep that wil be reached during generation
         assert min_len >= self.config.d_conv
-        assert top_k is None or top_k <= self.config.vocab_size
+        
+        if not isinstance(samples, list):
+            samples = [samples] * B
+        else:
+            assert len(samples) == B, "Length of samples must equal number of prompts"
+        if not isinstance(top_ks, list):
+            top_ks = [top_ks] * B
+        else:
+            assert len(top_ks) == B, "Length of top_ks must equal number of prompts"
+        if not isinstance(temperatures, list):
+            temperatures = [temperatures] * B
+        else:
+            assert len(temperatures) == B, "Length of temperatures must equal number of prompts"
+        for tk in top_ks:
+            if tk is not None:
+                assert tk <= self.config.vocab_size, "top_k must be <= vocab_size"
 
         input_device = prompts[0].device
         model_device = self.transformer.wte.weight.device
@@ -181,8 +197,7 @@ class GPT(nn.Module):
         
         prompt_lengths = torch.tensor([p.size(0) for p in prompts], device=input_device)
         position_ids = torch.arange(max_len+max_num_tokens, device=input_device).unsqueeze(0).expand(B, -1)
-        active_mask = position_ids < prompt_lengths.unsqueeze(1)
-        active_mask = active_mask.to(model_device)
+        active_mask = (position_ids < prompt_lengths.unsqueeze(1)).to(model_device)
 
         if stop_tokens is None:
             stop_tokens = [[] for _ in range(B)]
@@ -217,17 +232,22 @@ class GPT(nn.Module):
 
                 tokens_generated = next_token.squeeze(1) # (B,)
 
-                # check stop tokens for each sequence
+                # For finished sequences, reuse the previous token.
+                finished_mask = torch.tensor(finished, device=model_device)
+                prev_token = batched_generated[:, t-1]
+                new_tokens = torch.where(finished_mask, prev_token, tokens_generated)
+
+                update_mask = (~active_mask[:, t]) & torch.tensor([not f for f in finished], device=model_device)
+                batched_generated[:, t] = torch.where(update_mask, new_tokens, batched_generated[:, t])
+
+                # Mark finished for sequences that just produced a stop token.
                 for i in range(B):
                     if not finished[i] and stop_tokens[i] and (tokens_generated[i].item() in stop_tokens[i]):
                         finished[i] = True
 
-                if all(finished[i] for i in range(B) if stop_tokens[i]):
+                # Break early only if every sequence has stop tokens and is finished.
+                if all(len(st) > 0 for st in stop_tokens) and all(finished):
                     break
-
-                # only update tokens for sequences not yet finished and not in prompt positions
-                update_mask = (~active_mask[:, t]) & torch.tensor([not f for f in finished], device=model_device)
-                batched_generated[:, t] = torch.where(update_mask, tokens_generated, batched_generated[:, t])
 
                 next_token_logits, caches = self.forward(batched_generated[:, [t]], targets=None, caches=caches) # (B, 1, vocab_size), caches
                 next_token_logits = next_token_logits.squeeze(1) # (B, vocab_size)
