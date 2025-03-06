@@ -118,7 +118,7 @@ class MixerAttention(nn.Module):
         return self.last_k, self.last_v
     
     def get_empty_cache(self):
-        return (None, None, 0)
+        return (None, None, 0) # (k_cache, v_cache, pos)
 
 class Attention(MixerAttention):
     def __init__(self, config: NanoConfig, swa: bool, kv_share: bool = False):
@@ -228,7 +228,7 @@ class MixerDiffAttention(nn.Module):
         return self.last_k1, self.last_k2, self.last_v
     
     def get_empty_cache(self):
-        return (None, None, None, 0)
+        return (None, None, None, 0) # (k1_cache, k2_cache, v_cache, pos)
 
 class DiffAttention(MixerDiffAttention):
     def __init__(self, config: NanoConfig, swa: bool, kv_share: bool = False, layer_depth: int = 0):

@@ -8,6 +8,8 @@ with open(sys.argv[0]) as f:
 import uuid
 import glob
 import time
+import json
+import pickle
 import wandb
 
 import numpy as np
@@ -22,6 +24,7 @@ from arch.data.distributed_data_loader import DistributedDataLoader
 
 # TODO:
 
+# del unused imports
 # tests
 # GQA : test (165M run)
 # cross-layer kv sharing : test (165M run)
@@ -58,6 +61,10 @@ if master_process:
     run_id = str(uuid.uuid4())
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
+    with open(f'{logdir}/config.json', 'w') as f:
+        json.dump(vars(nconfig), f)
+    with open(f'{logdir}/config.pkl', 'wb') as f:
+        pickle.dump(nconfig, f)
     logfile = 'logs/%s.txt' % run_id
     print(logfile)
 def print0(s, console=True):

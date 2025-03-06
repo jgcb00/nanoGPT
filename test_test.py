@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from config import NanoConfig
-from arch.mixer.mixer_mamba2 import MixerMamba2, Mamba2
+from arch.mixer.test_mamba2 import Mamba2
 
 # Set up configuration
 config = NanoConfig()
@@ -23,10 +23,7 @@ class MyModel(nn.Module):
     def __init__(self, config):
         super(MyModel, self).__init__()
         self.blocks = nn.ModuleList([
-            Mamba2(config),
-            Mamba2(config),
-            Mamba2(config),
-            Mamba2(config),
+            Mamba2(d_model=768),
         ])
 
     def forward(self, x, caches=None):

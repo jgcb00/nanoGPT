@@ -1,20 +1,17 @@
-import lm_eval
-from lm_eval.api.model import LM
-from lm_eval.api.instance import Instance
-
 import tqdm
 import tiktoken
-import pickle
 
 import torch
 
-from config import NanoConfig
+from lm_eval.api.model import LM
+from lm_eval.api.instance import Instance
+
 from arch.gpt import GPT
 
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
 class GPT_LM(LM):
-    def __init__(self, model: GPT = None, enc: tiktoken.core.Encoding = None):
+    def __init__(self, model: GPT = None, enc: tiktoken.core.Encoding = None, batch_size: int = 32):
         super().__init__()
 
         self.model = model
@@ -22,6 +19,7 @@ class GPT_LM(LM):
         self.enc = enc
 
         self.eval_task = None
+        self.batch_size = batch_size
     
     @torch.no_grad()
     def loglikelihood(self, requests: list[Instance]) -> list[tuple[float, bool]]:
@@ -30,8 +28,6 @@ class GPT_LM(LM):
         input: ('Roof shingle removal: A man is sitting on a roof. He', ' is using wrap to wrap a pair of skis.')
         returns: (loglikelihood of target, is_greedy ie whether decoding greedily gives the target)
         """
-
-        batch_size = 32
         
         outputs = []
 
@@ -63,8 +59,8 @@ class GPT_LM(LM):
         
         # is_greedy computation
         is_greedys = []
-        for i in tqdm.tqdm(range(0, len(requests), batch_size)):
-            batch = requests[i:i+batch_size]
+        for i in tqdm.tqdm(range(0, len(requests), self.batch_size)):
+            batch = requests[i:i+self.batch_size]
 
             prompts = []
             n_tokens = []
@@ -100,10 +96,9 @@ class GPT_LM(LM):
         returns: 'end'
         """
 
-        batch_size = 32
         outputs = []
-        for i in tqdm.tqdm(range(0, len(requests), batch_size)):
-            batch = requests[i:i+batch_size]
+        for i in tqdm.tqdm(range(0, len(requests), self.batch_size)):
+            batch = requests[i:i+self.batch_size]
 
             prompts = []
             n_tokens_list = []
@@ -159,25 +154,3 @@ class GPT_LM(LM):
     def loglikelihood_rolling(self, requests: list[Instance]) -> list[tuple[float, bool]]:
         print("loglikelihood_rolling not implemented.")
         return
-
-config = NanoConfig()
-config.d_model = 768
-config.n_heads = 12
-config.n_layers = 12
-config.vocab_size = 50304
-config.vocab_size_real = 50257
-
-model = GPT(config)
-model.cuda()
-#model = torch.compile(model, dynamic=False)
-
-with open('enc.pkl', 'rb') as f:
-    enc_pickled = pickle.load(f)
-enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
-
-lm = GPT_LM(model, enc)
-
-#results = lm_eval.simple_evaluate(lm, tasks=["hellaswag"]) # loglikelihood
-results = lm_eval.simple_evaluate(lm, tasks=["swde"]) # generate_until
-
-print(results['results'])
