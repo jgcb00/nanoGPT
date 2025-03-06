@@ -15,13 +15,14 @@ NUM_GPUS=${2:-1}
 
 ARCH_ARGS=(
     --run_name $RUN_NAME
-    --model gpt
+    --model mamba2
     --d_model 768
     --n_heads 12
     --n_layers 12
-    --expand_factor 1
+    --expand_factor 2
     --attn_type normal
     --lin_attn_type mamba2
+    --no-fused_loss_computation
 )
 
 ATTENTION_ARGS=(
@@ -35,7 +36,7 @@ ATTENTION_ARGS=(
 )
 
 MAMBA_ARGS=(
-    --no-rmsnorm
+    --rmsnorm
     --d_state 128
     --d_conv 4
     --headdim 64
@@ -49,7 +50,7 @@ GDN_ARGS=(
 )
 
 OPTIM_ARGS=(
-    --optim spam
+    --optim muon
     --batch_size 512
     --device_batch_size 32
     --num_iterations 1000

@@ -116,6 +116,9 @@ match nconfig.model:
     case 'gated-delta-net':
         from arch.gated_delta_net import GatedDeltaNetModel
         model = GatedDeltaNetModel(nconfig)
+    case 'mamba2':
+        from arch.mamba2 import Mamba2Model
+        model = Mamba2Model(nconfig)
     case _:
         raise ValueError(f"Model {nconfig.model} not supported")        
 
@@ -200,7 +203,7 @@ for step in range(nconfig.num_iterations + 1):
     timed_steps = float('nan') if step <= 11 else (step - 10) + 1 # <= 11 to avoid bug in val
 
     # update the local/swa window size (start at 64, and increase by 64 gradually over swa_warmup_iters)
-    if nconfig.use_swa and nconfig.swa_warmup_iters > 0:
+    if nconfig.model in ["gpt", "dragon"] and nconfig.use_swa and nconfig.swa_warmup_iters > 0:
         swa_window_size = int(min(64*((step/nconfig.swa_warmup_iters * (nconfig.swa_window_size - 64) + 64)//64), nconfig.swa_window_size))
         for block in raw_model.transformer.h:
             block.attn.window_size = swa_window_size

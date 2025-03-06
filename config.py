@@ -5,7 +5,7 @@ from dataclasses import dataclass
 @dataclass
 class NanoConfig:
     # model
-    model : str = "gpt" #gpt or dragon
+    model : str = "mamba" #gpt or dragon or gated-delta-net or mamba2
     run_name : str = ""
     
     # arch - general
@@ -16,6 +16,7 @@ class NanoConfig:
     attn_type : str = "normal" # normal, diff
     lin_attn_type: str = "mamba2" # mamba2, gdn
     layer_norm_scaling : bool = False # whether to scale layer norm by sqrt(layer_depth)
+    fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
 
     # Attention related
     n_kv_heads : int = 0
@@ -68,7 +69,7 @@ class NanoConfig:
     
     def __post_init__(self):
         # check for valid model
-        assert self.model in ["gpt", "dragon", "gated-delta-net"]
+        assert self.model in ["gpt", "dragon", "gated-delta-net", "mamba2"]
         # check for valid attention type
         assert self.attn_type in ["normal", "diff"]
         # check for valid lin attn type

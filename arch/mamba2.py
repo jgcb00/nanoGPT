@@ -8,7 +8,7 @@ from fla.modules import FusedLinearCrossEntropyLoss
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer.mixer_gnd import GatedDeltaNet
+from arch.mixer.mixer_mamba2 import Mamba2
     
 class Block(nn.Module):
     def __init__(self, config: NanoConfig, layer_depth: int = 0):
@@ -17,7 +17,7 @@ class Block(nn.Module):
         kv_source: layer to get KV from, if any
         """
         super().__init__()
-        self.mixer = GatedDeltaNet(config)
+        self.mixer = Mamba2(config)
         self.mlp = MLP(config)
         # register here to not break torch_dynamo
         self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth) if config.layer_norm_scaling else 1.0))
@@ -27,7 +27,7 @@ class Block(nn.Module):
         x = x + self.mlp(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)))
         return x
 
-class GatedDeltaNetModel(nn.Module):
+class Mamba2Model(nn.Module):
     def __init__(self, config: NanoConfig):
         super().__init__()
         self.config = config
