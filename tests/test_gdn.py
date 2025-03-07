@@ -25,6 +25,8 @@ class MyModel(nn.Module):
         super(MyModel, self).__init__()
         self.blocks = nn.ModuleList([
             GatedDeltaNet(config),
+            GatedDeltaNet(config),
+            GatedDeltaNet(config),
         ])
 
     def forward(self, x, caches=None):
