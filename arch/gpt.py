@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from fla.modules import FusedLinearCrossEntropyLoss
+
 from config import NanoConfig
 from arch.mlp import MLP
 from arch.mixer.mixer_attention import Attention, DiffAttention
@@ -47,8 +49,6 @@ class GPT(nn.Module):
     def __init__(self, config: NanoConfig):
         super().__init__()
         self.config = config
-        
-        # TODO: fuse the two loops?
 
         swas : List[bool] = [] # whether to use swa for each layer
         for i in range(config.n_layers):
@@ -102,12 +102,17 @@ class GPT(nn.Module):
                 if caches is not None:
                     caches[i] = cache
 
-        x = F.rms_norm(x, (x.size(-1),)) # final norm
+        x = F.rms_norm(x, (x.size(-1),))
 
-        if targets is not None: # training
-            logits = self.lm_head(x)
-            logits = logits.float() # use tf32/fp32 for logits
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+        if targets is not None:
+            # if we are given some desired targets also calculate the loss
+            if self.config.fused_loss_computation:
+                criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
+                loss = criterion(x, targets, self.lm_head.weight)
+            else:
+                logits = self.lm_head(x)
+                logits = logits.float() # use tf32/fp32 for logits
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
             return loss
         elif caches is None: # inference without caching (not recommended)
             # inference-time mini-optimization: only forward the lm_head on the very last position

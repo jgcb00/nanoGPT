@@ -24,7 +24,7 @@ class CosineDecay(object):
 class StableSPAM(Optimizer):
 
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8,
-                 weight_decay=0, amsgrad=False,gamma1=0.7,gamma2=0.9,theta=0.999,total_T=None,eta_min=0.5,update_proj_gap=1000):
+                 weight_decay=0, amsgrad=False,gamma1=0.85,gamma2=0.99999,theta=0.999,total_T=None,eta_min=0.5,update_proj_gap=1000):
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if not 0.0 <= eps:
@@ -79,6 +79,7 @@ class StableSPAM(Optimizer):
 
                 # Perform optimization step
                 grad = p.grad
+                #print("original grad",grad)
 
 
                 if grad.is_sparse:
@@ -130,6 +131,7 @@ class StableSPAM(Optimizer):
                 # state["m_min_t"]=m_min_t
                 # ###### clipping
                 grad_norm=torch.norm(grad)
+                # print("grad_norm",grad_norm)
                 ####norm scaling
                 m_norm_t,v_norm_t=state["m_norm_t"],state["v_norm_t"]
                 # print("m_norm_t",m_norm_t,grad_norm)
@@ -139,12 +141,13 @@ class StableSPAM(Optimizer):
                 
                 m_norm_hat = m_norm_t / (1 - (self.gamma1*scale)**state['step'])
                 v_norm_hat = v_norm_t / (1 - self.gamma2**state['step'])
-
-                c_norm_t=m_norm_hat/(torch.sqrt(v_norm_hat)+group["eps"])
+                # print("v_norm_hat", v_norm_hat)
+                # print("m_norm_hat", m_norm_hat)
+                c_norm_t = m_norm_hat / (torch.sqrt(v_norm_hat) + group["eps"])
                 # print("grad_nrom",grad_norm,"c_norm",c_norm_t,"st",s_t,m_norm_t)
-
-                grad=grad/grad_norm*c_norm_t
-              
+                if grad_norm > 0:
+                    grad=grad/grad_norm*c_norm_t
+                # print("grad",grad)
 
                 # print(m_norm_t)
                 state["m_norm_t"],state["v_norm_t"]=m_norm_t,v_norm_t
@@ -169,7 +172,9 @@ class StableSPAM(Optimizer):
 
                 # Decay the first and second moment running average coefficient
                 exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
+                # print("exp_avg",exp_avg)
                 exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
+                # print("exp_avg_sq",exp_avg_sq)
                 if amsgrad:
                     # Maintains the maximum of all 2nd moment running avg. till now
                     torch.max(max_exp_avg_sq, exp_avg_sq, out=max_exp_avg_sq)
@@ -182,7 +187,8 @@ class StableSPAM(Optimizer):
 
 
                 norm_grad=exp_avg/denom
-
+                # print("norm_grad",norm_grad)
+                # print("step_size",step_size)
                 # else:
                 grad=norm_grad
                 p.add_(grad, alpha=-step_size)
