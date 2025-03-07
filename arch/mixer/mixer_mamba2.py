@@ -182,7 +182,7 @@ class MixerMamba2(nn.Module):
 
                 # get conv_cache with the last d_conv entries of xBC
                 _, xBC, _ = torch.split(zxbcdt, [self.d_inner, self.d_inner + 2 * self.ngroups * self.d_state, self.nheads], dim=-1)
-                conv_cache = xBC[:, -self.d_conv:].transpose(1, 2) # (error if seqlen<d_conv)
+                conv_cache = xBC[:, -self.d_conv:].transpose(1, 2) # error if seqlen<d_conv
 
                 cache = (h_cache, conv_cache)
         
@@ -216,8 +216,10 @@ class MixerMamba2(nn.Module):
         B = rearrange(B, "b (g n) -> b g n", g=self.ngroups)
         C = rearrange(C, "b (g n) -> b g n", g=self.ngroups)
         x_reshaped = rearrange(x, "b (h p) -> b h p", p=self.headdim)
+        if not self.rmsnorm:
+            z = rearrange(z, "b (h p) -> b h p", p=self.headdim)
             
-        y = selective_state_update(h_cache, x_reshaped, dt, A, B, C, D, z=None, dt_bias=dt_bias, dt_softplus=True)
+        y = selective_state_update(h_cache, x_reshaped, dt, A, B, C, D, z=z if not self.rmsnorm else None, dt_bias=dt_bias, dt_softplus=True)
         y = rearrange(y, "b h p -> b (h p)")
 
         if self.rmsnorm:

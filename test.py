@@ -4,11 +4,14 @@ import torch.nn as nn
 from config import NanoConfig
 from arch.mixer.mixer_mamba2 import MixerMamba2, Mamba2
 
+torch.manual_seed(42)
+torch.cuda.manual_seed(42)
+
 # Set up configuration
 config = NanoConfig()
 config.d_model = 768
 config.expand_factor = 2
-config.rmsnorm = True
+config.rmsnorm = False
 config.d_state = 128
 config.d_conv = 4
 config.headdim = 64
@@ -40,7 +43,7 @@ class MyModel(nn.Module):
 model = MyModel(config).to('cuda')
 
 batch_size = 1
-seq_len = 100
+seq_len = 1024
 x = torch.randn(batch_size, seq_len, config.d_model, device='cuda')
 
 # Process the full sequence at once (training mode)
@@ -50,7 +53,7 @@ print(f"Full sequence output shape: {y_full.shape}")
 
 # Process the sequence token-by-token (inference mode)
 y_step = []
-caches = [(None, None) for _ in range(len(model.blocks))]
+caches = [block.get_empty_cache() for block in model.blocks]
 
 with ctx:
     out, caches = model(x[:, 0:10, :], caches=caches)
