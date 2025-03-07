@@ -35,7 +35,7 @@ model.cuda()
 #model = torch.compile(model, dynamic=False)
 model.load_state_dict(torch.load(os.path.join(args.run_dir + 'model.pt')))
 
-with open('enc.pkl', 'rb') as f:
+with open('data/enc.pkl', 'rb') as f:
     enc_pickled = pickle.load(f)
 enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
 
