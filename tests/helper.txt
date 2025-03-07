@@ -1,0 +1,6 @@
+test_attn.py, test_mamba2.py, test_gdn.py : files that check the inference mode of the respective mixers.
+                                            more precisely, compares the output between the parallel mode (give the whole input directly, in one forward pass)
+                                            and the inference mode (give the input one by one, and carry the cache between each forward pass)
+
+                                            (actually, for the inference mode, there is first a small chunk that is passed in one forward pass
+                                            (akin to prompt prefill), this forward pass returns the cache, and then the inference mode goes 1 by 1)
