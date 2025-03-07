@@ -40,7 +40,7 @@ class Block(nn.Module):
 
         return x if cache is None else (x, cache)
     
-    def get_empty_cache(self, size):
+    def get_empty_cache(self):
         return self.attn.get_empty_cache()
 
 class GPT(nn.Module):
@@ -86,8 +86,6 @@ class GPT(nn.Module):
         #self.lm_head.weight.data.zero_()
 
     def forward(self, idx, targets=None, caches=None):
-        #assert (targets is None) ^ (caches is None), "Either targets or caches must be provided"
-
         # forward the GPT model itself
         x = self.transformer.wte(idx) # token embeddings of shape (b, t, d_model)
         x = F.rms_norm(x, (x.size(-1),))

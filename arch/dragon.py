@@ -39,22 +39,34 @@ class Block(nn.Module):
         self.out_proj = nn.Linear(config.expand_factor*config.d_model, config.d_model, bias=False)
         self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
         self.attn_norm = torch.nn.Parameter(torch.ones(config.expand_factor*config.d_model))
-        self.mamba_norm = torch.nn.Parameter(torch.ones(config.expand_factor*config.d_model))
+        self.lin_attn_norm = torch.nn.Parameter(torch.ones(config.expand_factor*config.d_model))
         self.mlp = MLP(config)
         self.expand_factor = config.expand_factor
         # register here to not break torch_dynamo
         self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth) if config.layer_norm_scaling else 1.0))
 
-    def forward(self, x):
+    def forward(self, x, cache=None):
         external_kv = None
         if self.kv_source is not None:
             external_kv = self.kv_source.attn.get_kv()
 
+        if cache is not None:
+            attn_cache, lin_attn_cache = cache
+        else:
+            attn_cache, lin_attn_cache = None, None
+
         hidden = self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),))
-        y = F.rms_norm(self.attn(hidden, external_kv=external_kv), (hidden.size(-1) * self.expand_factor,), self.attn_norm) + F.rms_norm(self.lin_attn(hidden), (hidden.size(-1) * self.expand_factor,), self.mamba_norm)
+
+        y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache)
+        y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache)
+        y = F.rms_norm(y_attn, (hidden.size(-1) * self.expand_factor,), self.attn_norm) + F.rms_norm(y_lin_attn, (hidden.size(-1) * self.expand_factor,), self.lin_attn_norm)
         x = x + self.out_proj(y / 2)
         x = x + self.mlp(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)))
-        return x
+        return x if cache is None else (x, (attn_cache, lin_attn_cache))
+
+    def get_empty_cache(self):
+        # ((k_cache, v_cache, pos), (h_cache, conv_cache))
+        return (self.attn.get_empty_cache(), self.lin_attn.get_empty_cache())
 
 class Dragon(nn.Module):
     def __init__(self, config: NanoConfig):
@@ -105,29 +117,39 @@ class Dragon(nn.Module):
             h = nn.ModuleList(blocks),
         ))
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
-        self.lm_head.weight.data.zero_()
+        #self.lm_head.weight.data.zero_()
 
-    def forward(self, idx, targets=None, return_logits=True):
+    def forward(self, idx, targets=None, caches=None):
         # forward the Dragon model itself
         x = self.transformer.wte(idx) # token embeddings of shape (b, t, d_model)
         x = F.rms_norm(x, (x.size(-1),))
-        for block in self.transformer.h:
-            x = block(x)
+
+        if caches is None:
+            # regular forward pass
+            for block in self.transformer.h:
+                x = block(x)
+        else:
+            # forward pass with caching
+            for i, block in enumerate(self.transformer.h):
+                x, cache = block(x, cache=caches[i] if caches else None)
+
+                if caches is not None:
+                    caches[i] = cache
+
         x = F.rms_norm(x, (x.size(-1),))
 
-        if targets is not None:
-            # if we are given some desired targets also calculate the loss
+        if targets is not None: # training
             logits = self.lm_head(x)
             logits = logits.float() # use tf32/fp32 for logits
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-        else:
+            return loss
+        elif caches is None: # inference without caching (not recommended)
             # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            #logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            logits = self.lm_head(x)
             logits = logits.float() # use tf32/fp32 for logits
-            loss = None
-
-        # there are performance reasons why not returning logits is prudent, if not needed
-        if not return_logits:
-            logits = None
-
-        return logits, loss
+            return logits
+        else: # inference
+            logits = self.lm_head(x)
+            logits = logits.float() # use tf32/fp32 for logits
+            return logits, caches

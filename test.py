@@ -4,9 +4,6 @@ import torch.nn as nn
 from config import NanoConfig
 from arch.mixer.mixer_mamba2 import MixerMamba2, Mamba2
 
-torch.manual_seed(42)
-torch.cuda.manual_seed(42)
-
 # Set up configuration
 config = NanoConfig()
 config.d_model = 768

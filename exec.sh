@@ -8,7 +8,7 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 export WANDB_MODE=offline
 export HF_DATASETS_OFFLINE=1
 
-python test.py
+python test_inference.py
 #python try.py
 #python lm_eval_tests.py
 #python test_decode.py
