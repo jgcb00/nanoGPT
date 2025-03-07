@@ -1,11 +1,12 @@
 from dataclasses import dataclass
 
 # todo: on pourra utiliser un typing union pour forcer certaines valeurs c'est plus propre
+# gpt: n_layers=12, expand_factor=1; dragon: n_layers=7, expand_factor=2
 
 @dataclass
 class NanoConfig:
     # model
-    model : str = "mamba" #gpt or dragon or gated-delta-net or mamba2
+    model : str = "gpt" #gpt or dragon or gated-delta-net or mamba2
     run_name : str = ""
     
     # arch - general
@@ -66,6 +67,9 @@ class NanoConfig:
 
     # for logging
     num_params: int = 0
+
+    # inference related
+    vocab_size_real : int = 50257
     
     def __post_init__(self):
         # check for valid model

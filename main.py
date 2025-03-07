@@ -8,6 +8,8 @@ with open(sys.argv[0]) as f:
 import uuid
 import glob
 import time
+import json
+import pickle
 import wandb
 
 import numpy as np
@@ -19,11 +21,11 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
-
 from arch.optim.filter_optimizer import create_filtered_optimizer, create_2D_filtered_optimizer
 
 # TODO:
 
+# del unused imports
 # tests
 # GQA : test (165M run)
 # cross-layer kv sharing : test (165M run)
@@ -62,9 +64,13 @@ torch._dynamo.config.optimize_ddp=False
 
 logfile = None
 if master_process:
-    run_id = str(uuid.uuid4())
+    run_id = nconfig.run_name + '_' + str(uuid.uuid4().hex[:8])
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
+    with open(f'{logdir}/config.json', 'w') as f:
+        json.dump(vars(nconfig), f)
+    with open(f'{logdir}/config.pkl', 'wb') as f:
+        pickle.dump(nconfig, f)
     logfile = 'logs/%s.txt' % run_id
     print(logfile)
 def print0(s, console=True):
@@ -220,7 +226,7 @@ for step in range(nconfig.num_iterations + 1):
         for _ in range(val_steps):
             x_val, y_val = val_loader.next_batch()
             with ctx: # of course, we'd like to use no_grad() here too, but that creates a torch.compile error for some reason
-                _, loss = model(x_val, y_val, return_logits=False)
+                loss = model(x_val, targets=y_val)
                 val_loss += loss.detach()
                 del loss
         dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
@@ -256,7 +262,7 @@ for step in range(nconfig.num_iterations + 1):
     for i in range(1, train_accumulation_steps+1):
         # forward pass
         with ctx:
-            _, loss = model(x, y, return_logits=False)
+            loss = model(x, targets=y)
             train_loss = loss.detach()
         # advance the dataset for the next batch
         x, y = train_loader.next_batch()
