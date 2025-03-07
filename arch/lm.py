@@ -229,7 +229,6 @@ class NanoLM(LM):
         max_len = max(prompt.size(0) for prompt in prompts)
         max_num_tokens = max(n_tokens)
         max_len_generation = max([p.size(0) + nt for (p, nt) in zip(prompts, n_tokens)]) # max timestep that wil be reached during generation
-        assert min_len >= self.config.d_conv
         
         if not isinstance(samples, list):
             samples = [samples] * B
