@@ -144,7 +144,7 @@ class MixerGatedDeltaNet(nn.Module):
             if module.bias is not None:
                 nn.init.zeros_(module.bias)
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states, cache=None):
         """
         hidden_states: (b, l, d)
         Returns: same shape as hidden_states
@@ -159,20 +159,24 @@ class MixerGatedDeltaNet(nn.Module):
         b_proj = qkvba[:, :, self.b_slice]
         a_proj = qkvba[:, :, self.a_slice]
 
-        q, _ = self.q_conv1d(x=q_proj,
+        h_cache, q_conv_cache, k_conv_cache, v_conv_cache = None, None, None, None
+        if cache is not None:
+            h_cache, q_conv_cache, k_conv_cache, v_conv_cache = cache
+
+        q, q_conv_cache = self.q_conv1d(x=q_proj,
                              mask=None, 
-                             cache=None,
-                             output_final_state=False,
+                             cache=q_conv_cache,
+                             output_final_state=(cache is not None),
                              seq_idx=None)
-        k, _ = self.k_conv1d(x=k_proj,
+        k, k_conv_cache = self.k_conv1d(x=k_proj,
                              mask=None,
-                             cache=None,
-                             output_final_state=False,
+                             cache=k_conv_cache,
+                             output_final_state=(cache is not None),
                              seq_idx=None)
-        v, _ = self.v_conv1d(x=v_proj,
+        v, v_conv_cache = self.v_conv1d(x=v_proj,
                              mask=None,
-                             cache=None,
-                             output_final_state=False,
+                             cache=v_conv_cache,
+                             output_final_state=(cache is not None),
                              seq_idx=None)
         
         q, k = map(lambda x: rearrange(x, 'b t (h d) -> b t h d', d=self.head_k_dim), (q, k))
@@ -180,17 +184,17 @@ class MixerGatedDeltaNet(nn.Module):
         beta = b_proj.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a_proj.float() + self.dt_bias)
 
-        o, _ = chunk_gated_delta_rule(
-                q=q,
-                k=k,
-                v=v,
-                g=g,
-                beta=beta,
-                initial_state=None,
-                output_final_state=False,
-                cu_seqlens=None, # for varlen training
-                head_first=False,
-                use_qk_l2norm_in_kernel=True
+        o, h_cache = chunk_gated_delta_rule(
+                        q=q,
+                        k=k,
+                        v=v,
+                        g=g,
+                        beta=beta,
+                        initial_state=h_cache,
+                        output_final_state=(cache is not None),
+                        cu_seqlens=None, # for varlen training
+                        head_first=False,
+                        use_qk_l2norm_in_kernel=True
             ) # (b t h d) where d is head_v_dim
         
         if self.use_gate:
@@ -203,7 +207,10 @@ class MixerGatedDeltaNet(nn.Module):
             if self.config.rmsnorm:
                 o = self.o_norm(o)
         o = rearrange(o, 'b t h d -> b t (h d)').contiguous()
-        return o
+        return o, (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
+    
+    def get_empty_cache(self):
+        return (None, None, None, None) # (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
     
 class GatedDeltaNet(MixerGatedDeltaNet):
     def __init__(self, *args, **kwargs):
@@ -211,6 +218,7 @@ class GatedDeltaNet(MixerGatedDeltaNet):
         self.out_proj = nn.Linear(self.value_dim, self.d_model, bias=False)
         self.out_proj.weight.data.zero_()
     
-    def forward(self, *args, **kwargs):
-        out = super().forward(*args, **kwargs)
-        return self.out_proj(out)
+    def forward(self, hidden_states, cache=None):
+        out, cache = super().forward(hidden_states, cache=cache)
+        out = self.out_proj(out)
+        return out, cache

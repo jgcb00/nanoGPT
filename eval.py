@@ -55,4 +55,6 @@ results = lm_eval.simple_evaluate(lm, tasks=args.tasks)
 
 # save results (with the names of the tasks in the file)
 with open(os.path.join(args.run_dir, 'results_' + '_'.join(args.tasks) + '.json'), 'w') as f:
-    json.dump(results, f)
+    json.dump(results['results'], f)
+
+print("Done evaluating.")
