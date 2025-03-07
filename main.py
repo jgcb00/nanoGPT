@@ -21,7 +21,6 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
-
 from arch.optim.filter_optimizer import create_filtered_optimizer, create_2D_filtered_optimizer
 
 # TODO:
