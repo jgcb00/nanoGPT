@@ -13,14 +13,14 @@ from arch.dragon import Dragon
 
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
-class GPT_LM(LM):
+class NanoLM(LM):
     def __init__(self, model: Union[GPT, Dragon] = None, enc: tiktoken.core.Encoding = None, batch_size: int = 32):
         super().__init__()
 
         assert model.config.rmsnorm == False, "rmsnorm must be False for Mamba2 inference for now."
 
         self.model = model
-        self.model.eval()
+        self.config = model.config
         self.enc = enc
 
         self.eval_task = None
@@ -161,6 +161,7 @@ class GPT_LM(LM):
         print("loglikelihood_rolling not implemented.")
         return
     
+    """ naive function, doesnt use any cache and shouldnt use. all prompts should have the same length. it is kept for reference. """
     @torch.no_grad()
     def generate_naive(self, prompt, n_tokens: int, sample: bool = True, top_k: int = None, temperature: float = 1.0):
         # prompt: (b, T) tensor
@@ -170,13 +171,13 @@ class GPT_LM(LM):
             top_k = min(top_k, self.config.vocab_size)
         
         input_device = prompt.device
-        prompt = prompt.to(self.transformer.wte.weight.device)
+        prompt = prompt.to(self.model.transformer.wte.weight.device)
 
-        self.eval()
+        self.model.eval()
         generated = prompt.clone()
 
         for _ in range(n_tokens):
-            logits = self.forward(generated, targets=None, caches=None) # (B, L, vocab_size)
+            logits = self.model.forward(generated, targets=None, caches=None) # (B, L, vocab_size)
             next_token_logits = logits[:, -1]
 
             if sample:
@@ -193,10 +194,11 @@ class GPT_LM(LM):
                 
             generated = torch.cat([generated, next_token], dim=1)
 
-        self.train()
+        self.model.train()
 
         return generated.to(input_device)[:, -n_tokens:]
     
+    """ optimized function, that uses cache and works with batched prompts (of different lengths) """
     @torch.no_grad()
     def generate(self, prompts, n_tokens: List[int], samples: Union[bool, List[bool]] = True, top_ks: Union[None, int, List[Optional[int]]] = None, temperatures: Union[float, List[float]] = 1.0, stop_tokens: List[Optional[List[int]]] = None):
         # prompts : list of B x (L) tensors
@@ -225,9 +227,9 @@ class GPT_LM(LM):
                 assert tk <= self.config.vocab_size_real, "top_k must be <= vocab_size"
 
         input_device = prompts[0].device
-        model_device = self.transformer.wte.weight.device
+        model_device = self.model.transformer.wte.weight.device
         
-        self.eval()
+        self.model.eval()
         
         padded_prompts = [F.pad(prompt, (0, max_len-prompt.size(0))) for prompt in prompts]
         padded_prompts = torch.stack(padded_prompts)
@@ -250,10 +252,10 @@ class GPT_LM(LM):
         # caches is a list of cache, one per layer
         # cache is composed of : - if Mamba(2) layer : the hidden state, and the last d_conv-1 inputs (see more in mamba_lm.py)
         #                        - if attention layer : the KV cache, ie 2 tensors of shape (B, num_kv_heads, L, head_dim)
-        caches = [layer.get_empty_cache(len(prompts)) for layer in self.transformer.h]
+        caches = [block.get_empty_cache() for block in self.model.transformer.h]
 
         # process prompt in one go
-        logits, caches = self.forward(batched_generated[:, :min_len], targets=None, caches=caches) # (B, L, vocab_size)
+        logits, caches = self.model.forward(batched_generated[:, :min_len], targets=None, caches=caches) # (B, L, vocab_size)
         next_token_logits = logits[:, -1] # (B, vocab_size)
         next_token_logits[:, self.config.vocab_size_real:] = -float("inf") # mask out the tokens that are not in the real vocab (used for efficiency reasons)
 
@@ -293,11 +295,11 @@ class GPT_LM(LM):
             if all(len(st) > 0 for st in stop_tokens) and all(finished):
                 break
 
-            next_token_logits, caches = self.forward(batched_generated[:, [t]], targets=None, caches=caches) # (B, 1, vocab_size), caches
+            next_token_logits, caches = self.model.forward(batched_generated[:, [t]], targets=None, caches=caches) # (B, 1, vocab_size), caches
             next_token_logits = next_token_logits.squeeze(1) # (B, vocab_size)
             next_token_logits[:, self.config.vocab_size_real:] = -float("inf") # mask out the tokens that are not in the real vocab (used for efficiency reasons)
 
-        self.train()
+        self.model.train()
 
         generated = []
         for i, (seq, nt) in enumerate(zip(batched_generated, n_tokens)):

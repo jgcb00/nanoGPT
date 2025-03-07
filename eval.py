@@ -11,7 +11,7 @@ import torch
 import lm_eval
 
 from arch.gpt import GPT
-from arch.lm import GPT_LM
+from arch.lm import NanoLM
 from config import NanoConfig
 
 @dataclass
@@ -26,8 +26,16 @@ class Args:
 args = tyro.cli(Args)
 
 # read config
-with open(os.path.join(args.run_dir, 'config.pkl'), 'rb') as f:
-    config = pickle.load(f)
+#with open(os.path.join(args.run_dir, 'config.pkl'), 'rb') as f:
+#    config = pickle.load(f)
+config = NanoConfig()
+config.d_model = 768
+config.model = "gpt"
+config.attn_type = "normal"
+config.n_heads = 12
+config.n_layers = 12
+config.vocab_size = 50304
+config.vocab_size_real = 50257
 
 # define and load model, tokenizer and encapsulate in LM object
 model = GPT(config)
@@ -39,7 +47,7 @@ with open('data/enc.pkl', 'rb') as f:
     enc_pickled = pickle.load(f)
 enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
 
-lm = GPT_LM(model, enc, batch_size=args.batch_size)
+lm = NanoLM(model, enc, batch_size=args.batch_size)
 
 # evaluate
 results = lm_eval.simple_evaluate(lm, tasks=args.tasks)
