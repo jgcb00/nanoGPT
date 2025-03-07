@@ -41,7 +41,7 @@ config.vocab_size_real = 50257
 model = GPT(config)
 model.cuda()
 #model = torch.compile(model, dynamic=False)
-model.load_state_dict(torch.load(os.path.join(args.run_dir + 'model.pt')))
+#model.load_state_dict(torch.load(os.path.join(args.run_dir, 'model.pt')))
 
 with open('data/enc.pkl', 'rb') as f:
     enc_pickled = pickle.load(f)
@@ -50,6 +50,7 @@ enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
 lm = NanoLM(model, enc, batch_size=args.batch_size)
 
 # evaluate
+print(f"Evaluating on tasks: {args.tasks}")
 results = lm_eval.simple_evaluate(lm, tasks=args.tasks)
 
 # save results (with the names of the tasks in the file)

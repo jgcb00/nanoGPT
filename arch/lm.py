@@ -23,7 +23,6 @@ class NanoLM(LM):
         self.config = model.config
         self.enc = enc
 
-        self.eval_task = None
         self.batch_size = batch_size
     
     @torch.no_grad()
@@ -33,12 +32,13 @@ class NanoLM(LM):
         input: ('Roof shingle removal: A man is sitting on a roof. He', ' is using wrap to wrap a pair of skis.')
         returns: (loglikelihood of target, is_greedy ie whether decoding greedily gives the target)
         """
-        
+
+        task = requests[0].task_name
         outputs = []
 
         # loglikelihood computation
         lls = []
-        if self.eval_task in ["hellaswag"]: # skip the likelihood for the tasks we don't need it for
+        if task in ["hellaswag"]: # skip the likelihood for the tasks we know we don't need it for
             for request in requests:
                 lls.append(0.)
         else:    
@@ -82,7 +82,7 @@ class NanoLM(LM):
                 target_enc_list.append(target_enc)
 
             with ctx:
-                generated_batch = self.model.generate(prompts=prompts, n_tokens=n_tokens, sample=False) # list of B x (L) tensors
+                generated_batch = self.generate(prompts=prompts, n_tokens=n_tokens, samples=False) # list of B x (L) tensors
             
             for i in range(len(batch)):
                 generated = generated_batch[i].tolist()
@@ -147,7 +147,7 @@ class NanoLM(LM):
                 stop_tokens_list.append(stop_tokens)
 
             with ctx:
-                generated_batch = self.model.generate(prompts=prompts, n_tokens=n_tokens_list, samples=samples, temperatures=temperatures, top_ks=top_ks, stop_tokens=stop_tokens_list) # list of B (L) tensors
+                generated_batch = self.generate(prompts=prompts, n_tokens=n_tokens_list, samples=samples, temperatures=temperatures, top_ks=top_ks, stop_tokens=stop_tokens_list) # list of B (L) tensors
             
             for i in range(len(batch)):
                 generated = generated_batch[i]
