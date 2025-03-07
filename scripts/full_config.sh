@@ -15,18 +15,18 @@ NUM_GPUS=${2:-1}
 
 ARCH_ARGS=(
     --run_name $RUN_NAME
-    --model mamba2
+    --model gpt
     --d_model 768
-    --n_heads 12
+    --n_heads 6
     --n_layers 12
-    --expand_factor 2
+    --expand_factor 1
     --attn_type normal
     --lin_attn_type mamba2
     --no-fused_loss_computation
 )
 
 ATTENTION_ARGS=(
-    --n_kv_heads 12
+    --n_kv_heads 6
     --no-use_kv_sharing
     --no-use_swa
     --swa_window_size 512

@@ -59,7 +59,7 @@ torch._dynamo.config.optimize_ddp=False
 
 logfile = None
 if master_process:
-    run_id = str(uuid.uuid4())
+    run_id = nconfig.run_name + '_' + str(uuid.uuid4().hex[:8])
     logdir = 'logs/%s/' % run_id
     os.makedirs(logdir, exist_ok=True)
     with open(f'{logdir}/config.json', 'w') as f:
