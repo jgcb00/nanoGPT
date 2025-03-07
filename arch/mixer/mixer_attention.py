@@ -44,7 +44,7 @@ def apply_rotary_emb(x, cos, sin):
     return torch.cat([y1, y2], 3).type_as(x)
 
 class MixerAttention(nn.Module):
-    def __init__(self, config: NanoConfig, swa: bool, kv_share: bool = False):
+    def __init__(self, config: NanoConfig, swa: bool = False, kv_share: bool = False):
         super().__init__()
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
@@ -121,12 +121,12 @@ class MixerAttention(nn.Module):
         return (None, None, 0) # (k_cache, v_cache, pos)
 
 class Attention(MixerAttention):
-    def __init__(self, config: NanoConfig, swa: bool, kv_share: bool = False):
+    def __init__(self, config: NanoConfig, swa: bool = False, kv_share: bool = False):
         super().__init__(config, swa=swa, kv_share=kv_share)
         
         # output projection
         self.c_proj = nn.Linear(config.expand_factor * self.d_model, self.d_model, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
     
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x, external_kv, cache)
@@ -134,7 +134,7 @@ class Attention(MixerAttention):
         return y, cache
     
 class MixerDiffAttention(nn.Module):
-    def __init__(self, config: NanoConfig, swa: bool, kv_share: bool = False, layer_depth: int = 0):
+    def __init__(self, config: NanoConfig, swa: bool = False, kv_share: bool = False, layer_depth: int = 0):
         super().__init__()
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
@@ -231,12 +231,12 @@ class MixerDiffAttention(nn.Module):
         return (None, None, None, 0) # (k1_cache, k2_cache, v_cache, pos)
 
 class DiffAttention(MixerDiffAttention):
-    def __init__(self, config: NanoConfig, swa: bool, kv_share: bool = False, layer_depth: int = 0):
+    def __init__(self, config: NanoConfig, swa: bool = False, kv_share: bool = False, layer_depth: int = 0):
         super().__init__(config, swa=swa, kv_share=kv_share, layer_depth=layer_depth)
         
         # output projection
         self.c_proj = nn.Linear(config.expand_factor * self.d_model, self.d_model, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
     
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x, external_kv, cache)

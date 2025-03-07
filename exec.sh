@@ -9,6 +9,7 @@ export WANDB_MODE=offline
 export HF_DATASETS_OFFLINE=1
 
 python test_inference.py
+#python test_inference.py
 #python try.py
 #python lm_eval_tests.py
 #python test_decode.py

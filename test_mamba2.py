@@ -27,6 +27,9 @@ class MyModel(nn.Module):
             Mamba2(config),
             Mamba2(config),
             Mamba2(config),
+            Mamba2(config),
+            Mamba2(config),
+            Mamba2(config),
         ])
 
     def forward(self, x, caches=None):

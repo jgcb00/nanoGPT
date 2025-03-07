@@ -145,8 +145,7 @@ class Dragon(nn.Module):
             return loss
         elif caches is None: # inference without caching (not recommended)
             # inference-time mini-optimization: only forward the lm_head on the very last position
-            #logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
-            logits = self.lm_head(x)
+            logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
             logits = logits.float() # use tf32/fp32 for logits
             return logits
         else: # inference
