@@ -6,7 +6,7 @@ from dataclasses import dataclass
 @dataclass
 class NanoConfig:
     # model
-    model : str = "mamba" #gpt or dragon or gated-delta-net or mamba2
+    model : str = "gpt" #gpt or dragon or gated-delta-net or mamba2
     run_name : str = ""
     
     # arch - general
