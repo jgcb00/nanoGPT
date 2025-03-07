@@ -145,7 +145,7 @@ class MixerDiffAttention(nn.Module):
         self.swa, self.window_size = swa, config.swa_window_size
         self.qk_norm = config.qk_norm
         self.scalable_softmax = config.scalable_softmax
-        self.lambda_init = 0.8 - 0.6 * math.exp(-0.3 * layer_depth)
+        self.register_buffer("lambda_init", torch.tensor(0.8 - 0.6 * math.exp(-0.3 * layer_depth)))
         
         head_dim = self.head_dim // 2
         self.lambda_q1 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))

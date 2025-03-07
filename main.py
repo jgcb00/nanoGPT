@@ -18,7 +18,7 @@ from torch import nn
 import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-
+from arch.utils import get_model
 from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 from arch.optim.filter_optimizer import create_filtered_optimizer, create_2D_filtered_optimizer
@@ -111,22 +111,7 @@ x, y = train_loader.next_batch()
 # there are only 50257 unique GPT-2 tokens; we extend to nearest multiple of 128 for efficiency. suggested to me by @Grad62304977.
 # this originates from Karpathy's experiments.
 num_vocab = 50304
-match nconfig.model:
-    case 'gpt':
-        from arch.gpt import GPT
-        model = GPT(nconfig)
-    case 'dragon':
-        from arch.dragon import Dragon
-        model = Dragon(nconfig)
-        pass
-    case 'gated-delta-net':
-        from arch.gated_delta_net import GatedDeltaNetModel
-        model = GatedDeltaNetModel(nconfig)
-    case 'mamba2':
-        from arch.mamba2 import Mamba2Model
-        model = Mamba2Model(nconfig)
-    case _:
-        raise ValueError(f"Model {nconfig.model} not supported")        
+model = get_model(nconfig)        
 
 #count parameters
 num_params = sum(p.numel() for p in model.parameters())
@@ -155,17 +140,19 @@ match nconfig.optim:
         optimizer1 = AdamW([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), fused=True)
         optimizer2 = AdamW([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), fused=True)
         optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
-        optimizer4 = create_filtered_optimizer(AdamW, raw_model.transformer.h.parameters(), lr=1e-3, betas=(0.9, 0.95), fused=True)
-        optimizers = [optimizer1, optimizer2, optimizer3, optimizer4]
+        optimizers = [optimizer1, optimizer2, optimizer3]
+        if optimizer4 := create_filtered_optimizer(AdamW, raw_model.transformer.h.parameters(), lr=1e-3, betas=(0.9, 0.95), fused=True):
+            optimizers.append(optimizer4)
+            
     case 'upgraded-muon':
         from arch.optim.spam import SPAMAdamW
         from arch.optim.muon import Muon
         optimizer1 = SPAMAdamW([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), weight_decay=0.01)
         optimizer2 = SPAMAdamW([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), weight_decay=0.01)
         optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
-        optimizer4 = create_filtered_optimizer(SPAMAdamW, raw_model.transformer.h.parameters(), lr=1e-3, betas=(0.9, 0.95), fused=True)
         optimizers = [optimizer1, optimizer2, optimizer3]
-        
+        if optimizer4 := create_filtered_optimizer(SPAMAdamW, raw_model.transformer.h.parameters(), lr=1e-3, betas=(0.9, 0.95), fused=True):
+            optimizers.append(optimizer4)        
     case 'stable-spam':
         from arch.optim.stableSPAM import StableSPAM
         optimizer = StableSPAM(model.parameters(), lr=nconfig.learning_rate, weight_decay=nconfig.weight_decay)

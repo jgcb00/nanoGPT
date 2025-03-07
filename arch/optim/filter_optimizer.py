@@ -7,6 +7,8 @@ def create_filtered_optimizer(optimizer_class, params, **optimizer_kwargs):
             filtered_params.append(p)
     
     # Create optimizer with filtered parameters
+    if filtered_params == []:
+        return None
     return optimizer_class(filtered_params, **optimizer_kwargs)
 
 
@@ -19,4 +21,6 @@ def create_2D_filtered_optimizer(optimizer_class, params, **optimizer_kwargs):
             filtered_params.append(p)
     
     # Create optimizer with filtered parameters
+    if filtered_params == []:
+        return None
     return optimizer_class(filtered_params, **optimizer_kwargs)
