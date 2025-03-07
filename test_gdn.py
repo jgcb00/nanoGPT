@@ -8,8 +8,9 @@ from arch.mixer.mixer_gnd import MixerGatedDeltaNet, GatedDeltaNet
 config = NanoConfig()
 config.d_model = 768
 config.expand_factor = 2
-config.rmsnorm = False
+config.rmsnorm = True
 config.d_state = 128
+config.n_heads = 12
 config.d_conv = 4
 config.headdim = 64
 config.ngroups = 8
@@ -23,8 +24,7 @@ class MyModel(nn.Module):
     def __init__(self, config):
         super(MyModel, self).__init__()
         self.blocks = nn.ModuleList([
-            MixerGatedDeltaNet(config),
-            MixerGatedDeltaNet(config),
+            GatedDeltaNet(config),
         ])
 
     def forward(self, x, caches=None):
