@@ -15,6 +15,20 @@ from arch.dragon import Dragon
 
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
+BSZ_FOR_TASKS = {
+    "hellaswag": 128,
+    "swde": 32,
+    "squadv2": 32,
+    "fda": 32,
+    "nq_open": 32,
+    "mmlu": 32,
+    "triviaqa": 64,
+    "arc_easy": 64,
+    "arc_challenge": 64,
+    "piqa": 64,
+    "winogrande": 64,
+}
+
 class NanoLM(LM):
     def __init__(self, model: Union[GPT, Dragon] = None, config = None, enc: tiktoken.core.Encoding = None, batch_size: int = 32, 
                  distributed: bool = False, local_rank: int = 0):
@@ -50,6 +64,9 @@ class NanoLM(LM):
         """
 
         task = requests[0].task_name
+        if task in BSZ_FOR_TASKS:
+            self.batch_size = BSZ_FOR_TASKS[task]
+
         outputs = []
 
         # Distribute requests across GPUs if in distributed mode
@@ -166,6 +183,10 @@ class NanoLM(LM):
             local_requests = requests[start_idx:end_idx]
         else:
             local_requests = requests
+
+        task = requests[0].task_name
+        if task in BSZ_FOR_TASKS:
+            self.batch_size = BSZ_FOR_TASKS[task]
 
         outputs = []
         for i in tqdm.tqdm(range(0, len(local_requests), self.batch_size), 
@@ -291,7 +312,6 @@ class NanoLM(LM):
         max_len = max(prompt.size(0) for prompt in prompts)
         max_num_tokens = max(n_tokens)
         max_len_generation = max([p.size(0) + nt for (p, nt) in zip(prompts, n_tokens)]) # max timestep that wil be reached during generation
-        assert min_len >= self.config.d_conv
         
         if not isinstance(samples, list):
             samples = [samples] * B

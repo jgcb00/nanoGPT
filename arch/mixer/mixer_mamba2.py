@@ -182,7 +182,8 @@ class MixerMamba2(nn.Module):
 
                 # get conv_cache with the last d_conv entries of xBC
                 _, xBC, _ = torch.split(zxbcdt, [self.d_inner, self.d_inner + 2 * self.ngroups * self.d_state, self.nheads], dim=-1)
-                conv_cache = xBC[:, -self.d_conv:].transpose(1, 2) # error if seqlen<d_conv
+                xBC_t = xBC.transpose(1, 2)
+                conv_cache = F.pad(xBC_t, (self.d_conv - xBC_t.shape[-1], 0)) # pad if sequence length is less than self.d_conv; otherwise, truncate
 
                 cache = (h_cache, conv_cache)
         

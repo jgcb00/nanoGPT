@@ -216,7 +216,7 @@ class GatedDeltaNet(MixerGatedDeltaNet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.out_proj = nn.Linear(self.value_dim, self.d_model, bias=False)
-        #self.out_proj.weight.data.zero_()
+        self.out_proj.weight.data.zero_()
     
     def forward(self, hidden_states, cache=None):
         out, cache = super().forward(hidden_states, cache=cache)

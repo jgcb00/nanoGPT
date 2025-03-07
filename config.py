@@ -17,6 +17,7 @@ class NanoConfig:
     attn_type : str = "normal" # normal, diff
     lin_attn_type: str = "mamba2" # mamba2, gdn
     layer_norm_scaling : bool = False # whether to scale layer norm by sqrt(layer_depth)
+    rope_to_nope: bool = False # whether to use the rope-to-nope arch (2501.18795, ie disable RoPE in full attn layers) (only effective if use_swa=True)
     fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
 
     # Attention related
