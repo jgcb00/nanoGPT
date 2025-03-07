@@ -26,22 +26,14 @@ class Args:
 args = tyro.cli(Args)
 
 # read config
-#with open(os.path.join(args.run_dir, 'config.pkl'), 'rb') as f:
-#    config = pickle.load(f)
-config = NanoConfig()
-config.d_model = 768
-config.model = "gpt"
-config.attn_type = "normal"
-config.n_heads = 12
-config.n_layers = 12
-config.vocab_size = 50304
-config.vocab_size_real = 50257
+with open(os.path.join(args.run_dir, 'config.pkl'), 'rb') as f:
+    config = pickle.load(f)
 
 # define and load model, tokenizer and encapsulate in LM object
 model = GPT(config)
 model.cuda()
 #model = torch.compile(model, dynamic=False)
-#model.load_state_dict(torch.load(os.path.join(args.run_dir, 'model.pt')))
+model.load_state_dict(torch.load(os.path.join(args.run_dir, 'model.pt')))
 
 with open('data/enc.pkl', 'rb') as f:
     enc_pickled = pickle.load(f)

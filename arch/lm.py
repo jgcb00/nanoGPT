@@ -13,6 +13,20 @@ from arch.dragon import Dragon
 
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
+BSZ_FOR_TASKS = {
+    "hellaswag": 128,
+    "swde": 32,
+    "squadv2": 32,
+    "fda": 32,
+    "nq_open": 32,
+    "mmlu": 32,
+    "triviaqa": 64,
+    "arc_easy": 64,
+    "arc_challenge": 64,
+    "piqa": 64,
+    "winogrande": 64,
+}
+
 class NanoLM(LM):
     def __init__(self, model: Union[GPT, Dragon] = None, enc: tiktoken.core.Encoding = None, batch_size: int = 32):
         super().__init__()
@@ -34,6 +48,9 @@ class NanoLM(LM):
         """
 
         task = requests[0].task_name
+        if task in BSZ_FOR_TASKS:
+            self.batch_size = BSZ_FOR_TASKS[task]
+
         outputs = []
 
         # loglikelihood computation
@@ -100,6 +117,10 @@ class NanoLM(LM):
         input: ('this is the beginning of the', {'until': ['.']})
         returns: 'end'
         """
+
+        task = requests[0].task_name
+        if task in BSZ_FOR_TASKS:
+            self.batch_size = BSZ_FOR_TASKS[task]
 
         outputs = []
         for i in tqdm.tqdm(range(0, len(requests), self.batch_size)):

@@ -10,4 +10,3 @@ torchrun --nproc_per_node=1 eval.py \
     --run_dir ${1} \
     --tasks ${2} \
     --batch_size ${3} \
-
