@@ -54,10 +54,7 @@ class NanoLM(LM):
 
         # loglikelihood computation
         lls = []
-        if task in ["hellaswag"]: # skip the likelihood for the tasks we know we don't need it for
-            for request in requests:
-                lls.append(0.)
-        else:    
+        if task in ["hellaswag"]: # do just the likelihood computation for hellaswag
             for request in tqdm.tqdm(requests):
                 input_str, target_str = request.args
 
@@ -77,6 +74,10 @@ class NanoLM(LM):
                 del loss
 
                 lls.append(loglikelihood)
+
+            for i in range(len(requests)):
+                outputs.append((lls[i], 0))
+            return outputs
         
         # is_greedy computation
         is_greedys = []

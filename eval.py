@@ -11,8 +11,7 @@ import torch
 import lm_eval
 from config import NanoConfig
 
-# Import the modified NanoLM class
-from arch.lm import NanoLM  # This should be your modified version with distributed support
+from arch.lm import NanoLM
 
 @dataclass
 class Args:
@@ -28,8 +27,9 @@ args = tyro.cli(Args)
 
 # read config
 with open(args.run_dir / 'config.pkl', 'rb') as f:
-    config = pickle.load(f)
+    config: NanoConfig = pickle.load(f)
 config.rmsnorm = False
+config.disable_scalable_softmax_for_local = False # for loading old runs
 
 # define and load model, tokenizer
 model = get_model(config)
@@ -41,17 +41,13 @@ assert model_file.exists(), f"Model file {model_file} does not exist."
 checkpoint = torch.load(model_file)
 state_dict = checkpoint['model']
 
-# Remove the `_orig_mod.` prefix
 new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
 model.load_state_dict(new_state_dict)
 
-# Load tokenizer
 with open('data/enc.pkl', 'rb') as f:
     enc_pickled = pickle.load(f)
 enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
 
-# Create NanoLM instance with distributed parameters
-# Here we DON'T wrap the model in DDP since NanoLM will do it
 lm = NanoLM(
     model=model, 
     config=config, 
@@ -59,7 +55,6 @@ lm = NanoLM(
     batch_size=args.batch_size,
 )
 
-# Only log from rank 0 to avoid duplicate messages
 print(f"Evaluating on tasks: {args.tasks} with 1GPUs")
 
 # evaluate

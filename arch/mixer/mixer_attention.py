@@ -154,7 +154,7 @@ class MixerDiffAttention(nn.Module):
         self.rope = self.swa or not config.rope_to_nope
         self.qk_norm = config.qk_norm
         self.scalable_softmax = config.scalable_softmax
-        if self.swa:
+        if config.disable_scalable_softmax_for_local and self.swa:
             self.scalable_softmax = False
         self.register_buffer("lambda_init", torch.tensor(0.8 - 0.6 * math.exp(-0.3 * layer_depth)))
         

@@ -27,6 +27,7 @@ class NanoConfig:
     swa_warmup_iters: int = 0 # on how many iteratons to warmup the local attention window size (0=no warmup)
     qk_norm: bool = True
     scalable_softmax: bool = False
+    disable_scalable_softmax_for_local: bool = True
     rope_to_nope: bool = False # whether to use the rope-to-nope arch (2501.18795, ie disable RoPE in full attn layers) (only effective if use_swa=True)
 
     # Mamba and GatedDeltaNet related

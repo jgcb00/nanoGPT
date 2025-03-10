@@ -6,9 +6,9 @@ source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/a
 #export CUDA_VISIBLE_DEVICES=0
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export HF_DATASETS_OFFLINE="1"
-export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
+#export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
-torchrun --nproc_per_node=${2} eval.py \
+python eval.py \
     --run_dir ${1} \
     --tasks hellaswag \
-    --batch_size ${3}
+    --batch_size ${2}
