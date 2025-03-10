@@ -8,8 +8,7 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 export HF_DATASETS_OFFLINE="1"
 export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
-torchrun --nproc_per_node=${2} eval_ddp.py \
+torchrun --nproc_per_node=${2} eval.py \
     --run_dir ${1} \
-    --tasks hellaswag,swde,squadv2,squad_completion,fda,nq_open,drop,mmlu,triviaqa,arc_easy,arc_challenge,piqa,winogrande \
+    --tasks hellaswag \
     --batch_size ${3}
-
