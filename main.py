@@ -118,8 +118,9 @@ num_params = sum(p.numel() for p in model.parameters())
 print0(f"number of parameters: {num_params}")
 nconfig.num_params = num_params
 model = model.to(torch.bfloat16)
-model = model.cuda()
 model = torch.compile(model, dynamic=False)
+model = model.cuda()
+
 # here we wrap model into DDP container
 model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module # always contains the "raw" unwrapped model
@@ -137,11 +138,11 @@ match nconfig.optim:
     case 'muon':
         from torch.optim import AdamW
         from arch.optim.muon import Muon
-        optimizer1 = AdamW([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), fused=True)
-        optimizer2 = AdamW([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), fused=True)
-        optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
+        optimizer1 = AdamW([raw_model.transformer.wte.weight], lr=nconfig.learning_rate * 10, betas=(0.9, 0.95), fused=True)
+        optimizer2 = AdamW([raw_model.lm_head.weight], lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True)
+        optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95, weight_decay=nconfig.weight_decay)
         optimizers = [optimizer1, optimizer2, optimizer3]
-        if optimizer4 := create_filtered_optimizer(AdamW, raw_model.transformer.h.parameters(), lr=1e-3, betas=(0.9, 0.95), fused=True):
+        if optimizer4 := create_filtered_optimizer(AdamW, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True):
             optimizers.append(optimizer4)
             
     case 'upgraded-muon':

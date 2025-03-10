@@ -4,8 +4,6 @@ import tiktoken
 
 import torch
 import torch.nn.functional as F
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
 
 from lm_eval.api.model import LM
 from lm_eval.api.instance import Instance
@@ -19,6 +17,7 @@ BSZ_FOR_TASKS = {
     "hellaswag": 128,
     "swde": 32,
     "squadv2": 32,
+    "squad_completion" : 32,
     "fda": 32,
     "nq_open": 32,
     "mmlu": 32,
@@ -30,29 +29,13 @@ BSZ_FOR_TASKS = {
 }
 
 class NanoLM(LM):
-    def __init__(self, model: Union[GPT, Dragon] = None, config = None, enc: tiktoken.core.Encoding = None, batch_size: int = 32, 
-                 distributed: bool = False, local_rank: int = 0):
+    def __init__(self, model: Union[GPT, Dragon] = None, config=None, enc: tiktoken.core.Encoding = None, batch_size: int = 32):
         super().__init__()
 
-        self.distributed = distributed
-        self.local_rank = local_rank
-
-        # Initialize distributed environment if needed
-        if self.distributed and not dist.is_initialized():
-            dist.init_process_group(backend='nccl')
-            torch.cuda.set_device(self.local_rank)
-
-        # Move model to device
         self.model = model
-        if self.model is not None:
-            self.model = self.model.cuda()
-            
-            # Wrap model in DDP if distributed
-            if self.distributed:
-                self.model = DDP(self.model, device_ids=[self.local_rank])
-
         self.config = config
         self.enc = enc
+
         self.batch_size = batch_size
     
     @torch.no_grad()
@@ -69,26 +52,13 @@ class NanoLM(LM):
 
         outputs = []
 
-        # Distribute requests across GPUs if in distributed mode
-        if self.distributed:
-            world_size = dist.get_world_size()
-            rank = dist.get_rank()
-            
-            # Split requests across processes
-            requests_per_rank = len(requests) // world_size
-            start_idx = rank * requests_per_rank
-            end_idx = start_idx + requests_per_rank if rank < world_size - 1 else len(requests)
-            local_requests = requests[start_idx:end_idx]
-        else:
-            local_requests = requests
-
         # loglikelihood computation
         lls = []
         if task in ["hellaswag"]: # skip the likelihood for the tasks we know we don't need it for
-            for request in local_requests:
+            for request in requests:
                 lls.append(0.)
         else:    
-            for request in tqdm.tqdm(local_requests, desc=f"Computing loglikelihoods", disable=self.distributed and self.local_rank != 0):
+            for request in tqdm.tqdm(requests):
                 input_str, target_str = request.args
 
                 input_enc = self.enc.encode(input_str) # list of ints
@@ -96,8 +66,7 @@ class NanoLM(LM):
                 len_input = len(input_enc)
                 len_target = len(target_enc)
 
-                device = self.model.module.transformer.wte.weight.device if self.distributed else self.model.transformer.wte.weight.device
-                prompt = torch.tensor(input_enc+target_enc, dtype=torch.long, device=device).unsqueeze(0)
+                prompt = torch.tensor(input_enc+target_enc, dtype=torch.long, device=self.model.transformer.wte.weight.device).unsqueeze(0)
                 x = prompt[:, :-1]
                 y = prompt[:, 1:].clone()
                 y[:, :len_input-1] = -1
@@ -111,10 +80,8 @@ class NanoLM(LM):
         
         # is_greedy computation
         is_greedys = []
-        for i in tqdm.tqdm(range(0, len(local_requests), self.batch_size), 
-                          desc=f"Computing is_greedy", 
-                          disable=self.distributed and self.local_rank != 0):
-            batch = local_requests[i:i+self.batch_size]
+        for i in tqdm.tqdm(range(0, len(requests), self.batch_size)):
+            batch = requests[i:i+self.batch_size]
 
             prompts = []
             n_tokens = []
@@ -138,30 +105,9 @@ class NanoLM(LM):
                 is_greedy = int(generated == target_enc_list[i])
                 is_greedys.append(is_greedy)
 
-        # Combine results from all processes if in distributed mode
-        if self.distributed:
-            # Gather all loglikelihoods and is_greedy values
-            all_lls = [None for _ in range(dist.get_world_size())]
-            all_is_greedys = [None for _ in range(dist.get_world_size())]
-            
-            dist.all_gather_object(all_lls, lls)
-            dist.all_gather_object(all_is_greedys, is_greedys)
-            
-            if self.local_rank == 0:
-                # Flatten the list of lists
-                lls = [item for sublist in all_lls for item in sublist]
-                is_greedys = [item for sublist in all_is_greedys for item in sublist]
-                
-                for i in range(len(requests)):
-                    outputs.append((lls[i], is_greedys[i]))
-                
-                return outputs
-            else:
-                return []
-        else:
-            for i in range(len(requests)):
-                outputs.append((lls[i], is_greedys[i]))
-            return outputs
+        for i in range(len(requests)):
+            outputs.append((lls[i], is_greedys[i]))
+        return outputs
 
     @torch.no_grad()
     def generate_until(self, requests: list[Instance]) -> list[str]:
@@ -171,28 +117,13 @@ class NanoLM(LM):
         returns: 'end'
         """
 
-        # Distribute requests across GPUs if in distributed mode
-        if self.distributed:
-            world_size = dist.get_world_size()
-            rank = dist.get_rank()
-            
-            # Split requests across processes
-            requests_per_rank = len(requests) // world_size
-            start_idx = rank * requests_per_rank
-            end_idx = start_idx + requests_per_rank if rank < world_size - 1 else len(requests)
-            local_requests = requests[start_idx:end_idx]
-        else:
-            local_requests = requests
-
         task = requests[0].task_name
         if task in BSZ_FOR_TASKS:
             self.batch_size = BSZ_FOR_TASKS[task]
 
         outputs = []
-        for i in tqdm.tqdm(range(0, len(local_requests), self.batch_size), 
-                          desc="Generating",
-                          disable=self.distributed and self.local_rank != 0):
-            batch = local_requests[i:i+self.batch_size]
+        for i in tqdm.tqdm(range(0, len(requests), self.batch_size)):
+            batch = requests[i:i+self.batch_size]
 
             prompts = []
             n_tokens_list = []
@@ -243,21 +174,7 @@ class NanoLM(LM):
                 generated_str = self.enc.decode(generated.tolist())
                 outputs.append(generated_str)
 
-        # Combine results from all processes if in distributed mode
-        if self.distributed:
-            # Gather all outputs
-            all_outputs = [None for _ in range(dist.get_world_size())]
-            
-            dist.all_gather_object(all_outputs, outputs)
-            
-            if self.local_rank == 0:
-                # Flatten the list of lists
-                outputs = [item for sublist in all_outputs for item in sublist]
-                return outputs
-            else:
-                return []
-        else:
-            return outputs
+        return outputs
 
     @torch.no_grad()
     def loglikelihood_rolling(self, requests: list[Instance]) -> list[tuple[float, bool]]:
@@ -274,8 +191,7 @@ class NanoLM(LM):
             top_k = min(top_k, self.config.vocab_size)
         
         input_device = prompt.device
-        device = self.model.module.transformer.wte.weight.device if self.distributed else self.model.transformer.wte.weight.device
-        prompt = prompt.to(device)
+        prompt = prompt.to(self.model.transformer.wte.weight.device)
 
         self.model.eval()
         generated = prompt.clone()
@@ -288,8 +204,8 @@ class NanoLM(LM):
                 probs = F.softmax(next_token_logits / temperature, dim=-1)
                     
                 if top_k is not None:
-                    values, _ = torch.topk(probs, k=top_k) # (B, k) ordered from lowest to biggest
-                    probs[probs < values[:, -1, None]] = 0 # zero-out all probs except the k first
+                    values, _ = torch.topk(probs, k=top_k) # (B, k) ordered from lowest to biggest
+                    probs[probs < values[:, -1, None]] = 0 # zero-out all probs except the k first
                     probs = probs / probs.sum(axis=1, keepdims=True)
 
                 next_token = torch.multinomial(probs, num_samples=1)
@@ -305,7 +221,7 @@ class NanoLM(LM):
     """ optimized function, that uses cache and works with batched prompts (of different lengths) """
     @torch.no_grad()
     def generate(self, prompts, n_tokens: List[int], samples: Union[bool, List[bool]] = True, top_ks: Union[None, int, List[Optional[int]]] = None, temperatures: Union[float, List[float]] = 1.0, stop_tokens: List[Optional[List[int]]] = None):
-        # prompts : list of B x (L) tensors
+        # prompts : list of B x (L) tensors
 
         B = len(prompts)
         min_len = min(prompt.size(0) for prompt in prompts)
@@ -330,7 +246,7 @@ class NanoLM(LM):
                 assert tk <= self.config.vocab_size_real, "top_k must be <= vocab_size"
 
         input_device = prompts[0].device
-        model_device = self.model.module.transformer.wte.weight.device if self.distributed else self.model.transformer.wte.weight.device
+        model_device = self.model.transformer.wte.weight.device
         
         self.model.eval()
         
@@ -355,12 +271,11 @@ class NanoLM(LM):
         # caches is a list of cache, one per layer
         # cache is composed of : - if Mamba(2) layer : the hidden state, and the last d_conv-1 inputs (see more in mamba_lm.py)
         #                        - if attention layer : the KV cache, ie 2 tensors of shape (B, num_kv_heads, L, head_dim)
-        transformer = self.model.module.transformer if self.distributed else self.model.transformer
-        caches = [block.get_empty_cache() for block in transformer.h]
+        caches = [block.get_empty_cache() for block in self.model.transformer.h]
 
-        # process prompt in one go
+        # process prompt in one go
         logits, caches = self.model.forward(batched_generated[:, :min_len], targets=None, caches=caches) # (B, L, vocab_size)
-        next_token_logits = logits[:, -1] # (B, vocab_size)
+        next_token_logits = logits[:, -1] # (B, vocab_size)
         next_token_logits[:, self.config.vocab_size_real:] = -float("inf") # mask out the tokens that are not in the real vocab (used for efficiency reasons)
 
         # generate one token at a time
@@ -399,8 +314,8 @@ class NanoLM(LM):
             if all(len(st) > 0 for st in stop_tokens) and all(finished):
                 break
 
-            next_token_logits, caches = self.model.forward(batched_generated[:, [t]], targets=None, caches=caches) # (B, 1, vocab_size), caches
-            next_token_logits = next_token_logits.squeeze(1) # (B, vocab_size)
+            next_token_logits, caches = self.model.forward(batched_generated[:, [t]], targets=None, caches=caches) # (B, 1, vocab_size), caches
+            next_token_logits = next_token_logits.squeeze(1) # (B, vocab_size)
             next_token_logits[:, self.config.vocab_size_real:] = -float("inf") # mask out the tokens that are not in the real vocab (used for efficiency reasons)
 
         self.model.train()

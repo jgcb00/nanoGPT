@@ -1,5 +1,6 @@
 
 import torch
+import math
 import os
 import torch.distributed as dist
 # -----------------------------------------------------------------------------
@@ -36,6 +37,14 @@ def zeropower_via_newtonschulz5(G, steps=10, eps=1e-7):
 
 zeropower_backends = dict(svd=zeropower_via_svd, newtonschulz5=zeropower_via_newtonschulz5)
 
+def adjust_lr_for_muon(lr, param_shape):
+        A, B = param_shape[:2]
+        # We adjust the learning rate and weight decay based on the size of the parameter matrix
+        # as describted in the paper
+        adjusted_ratio = 0.2 * math.sqrt(max(A, B))
+        adjusted_lr = lr * adjusted_ratio
+        return adjusted_lr
+
 class Muon(torch.optim.Optimizer):
     """
     Muon - MomentUm Orthogonalized by Newton-schulz
@@ -61,9 +70,9 @@ class Muon(torch.optim.Optimizer):
         backend: The chosen backend for the orthogonalization step. (recommended: 'newtonschulz5')
         backend_steps: The number of iteration steps to use in the backend, if it is iterative.
     """
-    def __init__(self, params, lr=0.02, momentum=0.95, nesterov=True,
+    def __init__(self, params, lr=0.02, momentum=0.95, weight_decay=0., nesterov=True,
                  backend='newtonschulz5', backend_steps=5):
-        defaults = dict(lr=lr, momentum=momentum, nesterov=nesterov, backend=backend, backend_steps=backend_steps)
+        defaults = dict(lr=lr, momentum=momentum, nesterov=nesterov, backend=backend, weight_decay=weight_decay, backend_steps=backend_steps)
         super().__init__(params, defaults)
 
     def step(self):
@@ -71,6 +80,7 @@ class Muon(torch.optim.Optimizer):
         for group in self.param_groups:
 
             lr = group['lr']
+            wd = group['weight_decay']
             momentum = group['momentum']
             zeropower_backend = zeropower_backends[group['backend']]
 
@@ -102,5 +112,8 @@ class Muon(torch.optim.Optimizer):
             curr_idx = 0
             for p in group['params']:
                 g = updates_flat[curr_idx:curr_idx+p.numel()].view_as(p.data).type_as(p.data)
-                p.data.add_(g, alpha=-lr)
+                #apply weight decay
+                p.data.mul_(1 - lr * wd)
+                #apply update
+                p.data.add_(g, alpha=-adjust_lr_for_muon(lr, p.shape))
                 curr_idx += p.numel()

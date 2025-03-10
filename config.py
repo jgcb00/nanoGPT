@@ -17,7 +17,6 @@ class NanoConfig:
     attn_type : str = "normal" # normal, diff
     lin_attn_type: str = "mamba2" # mamba2, gdn
     layer_norm_scaling : bool = False # whether to scale layer norm by sqrt(layer_depth)
-    rope_to_nope: bool = False # whether to use the rope-to-nope arch (2501.18795, ie disable RoPE in full attn layers) (only effective if use_swa=True)
     fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
 
     # Attention related
@@ -28,6 +27,7 @@ class NanoConfig:
     swa_warmup_iters: int = 0 # on how many iteratons to warmup the local attention window size (0=no warmup)
     qk_norm: bool = True
     scalable_softmax: bool = False
+    rope_to_nope: bool = False # whether to use the rope-to-nope arch (2501.18795, ie disable RoPE in full attn layers) (only effective if use_swa=True)
 
     # Mamba and GatedDeltaNet related
     rmsnorm: bool = False # whether to use an output norm (before proj)
@@ -44,7 +44,7 @@ class NanoConfig:
     expand_v : int = 2
 
     # optim
-    optim : str = "muon" # adamw, spam, or muon
+    optim : str = "muon" # adamw, spam, stable-spam or muon
     batch_size : int = 8*64 # batch size, in sequences, across all devices
     device_batch_size : int = 64 # batch size, in sequences, per device
     num_iterations : int = 1000 # number of iterations to run

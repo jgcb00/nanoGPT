@@ -56,6 +56,8 @@ class MixerAttention(nn.Module):
         self.rope = self.swa or not config.rope_to_nope
         self.qk_norm = config.qk_norm
         self.scalable_softmax = config.scalable_softmax
+        if self.swa:
+            self.scalable_softmax = False
         assert self.d_model % self.n_heads == 0
 
         self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
@@ -152,6 +154,8 @@ class MixerDiffAttention(nn.Module):
         self.rope = self.swa or not config.rope_to_nope
         self.qk_norm = config.qk_norm
         self.scalable_softmax = config.scalable_softmax
+        if self.swa:
+            self.scalable_softmax = False
         self.register_buffer("lambda_init", torch.tensor(0.8 - 0.6 * math.exp(-0.3 * layer_depth)))
         
         head_dim = self.head_dim // 2

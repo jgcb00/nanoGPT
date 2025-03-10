@@ -11,9 +11,10 @@ import torch
 import torch.distributed as dist
 import lm_eval
 from config import NanoConfig
+import datetime  # Add this import
 
 # Import the modified NanoLM class
-from arch.lm_ddp import NanoLM  # This should be your modified version with distributed support
+from arch.lm import NanoLM  # This should be your modified version with distributed support
 
 @dataclass
 class Args:
@@ -27,12 +28,6 @@ class Args:
 
 args = tyro.cli(Args)
 
-# Initialize distributed environment
-dist.init_process_group(backend='nccl', init_method='env://')
-local_rank = dist.get_rank()
-world_size = dist.get_world_size()
-torch.cuda.set_device(local_rank)
-
 # read config
 with open(args.run_dir / 'config.pkl', 'rb') as f:
     config = pickle.load(f)
@@ -45,7 +40,7 @@ model.cuda()
 model_file = sorted(args.run_dir.glob("state_step*.pt"))[-1]
 assert model_file.exists(), f"Model file {model_file} does not exist."
 
-checkpoint = torch.load(model_file, map_location=f'cuda:{local_rank}')
+checkpoint = torch.load(model_file)
 state_dict = checkpoint['model']
 
 # Remove the `_orig_mod.` prefix
@@ -64,21 +59,16 @@ lm = NanoLM(
     config=config, 
     enc=enc, 
     batch_size=args.batch_size,
-    distributed=True,  # Enable distributed mode
-    local_rank=local_rank  # Pass local rank
 )
 
 # Only log from rank 0 to avoid duplicate messages
-if local_rank == 0:
-    print(f"Evaluating on tasks: {args.tasks} with {world_size} GPUs")
+print(f"Evaluating on tasks: {args.tasks} with 1GPUs")
 
 # evaluate
 results = lm_eval.simple_evaluate(lm, tasks=args.tasks)
 
-# Only save results from rank 0
-if local_rank == 0:
-    # save results (with the names of the tasks in the file)
-    result_file_path = args.run_dir / f"results_{'_'.join(args.tasks)}.json"
-    with open(result_file_path, 'w') as f:
-        json.dump(results['results'], f)
-    print("Done evaluating.")
+# save results (with the names of the tasks in the file)
+result_file_path = args.run_dir / f"results_{'_'.join(args.tasks)}.json"
+with open(result_file_path, 'w') as f:
+    json.dump(results['results'], f)
+print("Done evaluating.")
