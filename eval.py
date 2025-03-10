@@ -8,10 +8,8 @@ import tiktoken
 from pathlib import Path
 from arch.utils import get_model
 import torch
-import torch.distributed as dist
 import lm_eval
 from config import NanoConfig
-import datetime  # Add this import
 
 # Import the modified NanoLM class
 from arch.lm import NanoLM  # This should be your modified version with distributed support
