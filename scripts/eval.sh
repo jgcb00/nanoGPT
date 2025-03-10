@@ -10,5 +10,5 @@ export HF_DATASETS_OFFLINE="1"
 
 python eval.py \
     --run_dir ${1} \
-    --tasks hellaswag \
+    --tasks squadv2 \
     --batch_size ${2}

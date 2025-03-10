@@ -58,7 +58,7 @@ lm = NanoLM(
 print(f"Evaluating on tasks: {args.tasks} with 1GPUs")
 
 # evaluate
-results = lm_eval.simple_evaluate(lm, tasks=args.tasks)
+results = lm_eval.simple_evaluate(lm, tasks=args.tasks, limit=0.1)
 
 # save results (with the names of the tasks in the file)
 result_file_path = args.run_dir / f"results_{'_'.join(args.tasks)}.json"

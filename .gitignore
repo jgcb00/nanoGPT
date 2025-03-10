@@ -4,3 +4,8 @@ logs/
 *.out
 env/
 wandb/
+*.lock
+emozilla___pg19/
+lambada/
+EleutherAI___lambada_openai/
+openbookqa/

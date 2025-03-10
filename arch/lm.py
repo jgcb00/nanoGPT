@@ -46,6 +46,8 @@ class NanoLM(LM):
         returns: (loglikelihood of target, is_greedy ie whether decoding greedily gives the target)
         """
 
+        print("loglikelihood")
+
         task = requests[0].task_name
         if task in BSZ_FOR_TASKS:
             self.batch_size = BSZ_FOR_TASKS[task]
@@ -54,27 +56,27 @@ class NanoLM(LM):
 
         # loglikelihood computation
         lls = []
+        for request in tqdm.tqdm(requests):
+            input_str, target_str = request.args
+
+            input_enc = self.enc.encode(input_str) # list of ints
+            target_enc = self.enc.encode(target_str)
+            len_input = len(input_enc)
+            len_target = len(target_enc)
+
+            prompt = torch.tensor(input_enc+target_enc, dtype=torch.long, device=self.model.transformer.wte.weight.device).unsqueeze(0)
+            x = prompt[:, :-1]
+            y = prompt[:, 1:].clone()
+            y[:, :len_input-1] = -1
+
+            with ctx:
+                loss = self.model(x, targets=y)
+            loglikelihood = -loss.item()
+            del loss
+
+            lls.append(loglikelihood)
+
         if task in ["hellaswag"]: # do just the likelihood computation for hellaswag
-            for request in tqdm.tqdm(requests):
-                input_str, target_str = request.args
-
-                input_enc = self.enc.encode(input_str) # list of ints
-                target_enc = self.enc.encode(target_str)
-                len_input = len(input_enc)
-                len_target = len(target_enc)
-
-                prompt = torch.tensor(input_enc+target_enc, dtype=torch.long, device=self.model.transformer.wte.weight.device).unsqueeze(0)
-                x = prompt[:, :-1]
-                y = prompt[:, 1:].clone()
-                y[:, :len_input-1] = -1
-
-                with ctx:
-                    loss = self.model(x, targets=y)
-                loglikelihood = -loss.item()
-                del loss
-
-                lls.append(loglikelihood)
-
             for i in range(len(requests)):
                 outputs.append((lls[i], 0))
             return outputs
@@ -118,6 +120,8 @@ class NanoLM(LM):
         returns: 'end'
         """
 
+        print("generate_until")
+
         task = requests[0].task_name
         if task in BSZ_FOR_TASKS:
             self.batch_size = BSZ_FOR_TASKS[task]
@@ -141,7 +145,7 @@ class NanoLM(LM):
                     stop_tokens = [self.enc.encode(token)[0] for token in until]
                 else:
                     stop_tokens = None
-                if 'max_gen_toks' in kwargs:
+                if 'max_gen_toks' in kwargs and kwargs['max_gen_toks'] > 0:
                     max_gen_toks = kwargs['max_gen_toks']
                 else:
                     max_gen_toks = 1024
