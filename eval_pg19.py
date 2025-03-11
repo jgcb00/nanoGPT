@@ -48,7 +48,7 @@ new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
 model.load_state_dict(new_state_dict)
 
 # load tokenizer
-with open('data/enc.pkl', 'rb') as f:
+with open('nanoGPT_atl/data/enc.pkl', 'rb') as f:
     enc_pickled = pickle.load(f)
 enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
 

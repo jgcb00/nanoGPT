@@ -8,6 +8,6 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
-torchrun --nproc_per_node=1 eval_pg19.py \
+torchrun --nproc_per_node=1 nanoGPT_atl/eval_pg19.py \
     --run_dir ${1} \
     --num_samples ${2} \
