@@ -85,7 +85,7 @@ class GPT(nn.Module):
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
         #self.lm_head.weight.data.zero_()
 
-    def forward(self, idx, targets=None, caches=None):
+    def forward(self, idx, targets=None, caches=None, just_logits=False):
         # forward the GPT model itself
         x = self.transformer.wte(idx) # token embeddings of shape (b, t, d_model)
         x = F.rms_norm(x, (x.size(-1),))
@@ -103,6 +103,10 @@ class GPT(nn.Module):
                     caches[i] = cache
 
         x = F.rms_norm(x, (x.size(-1),))
+
+        if just_logits:
+            logits = self.lm_head(x)
+            return logits
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss
