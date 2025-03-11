@@ -13,6 +13,11 @@ from config import NanoConfig
 
 from arch.lm import NanoLM
 
+"""
+USED FOR EVALUATING ALREADY, OLD, TRAINED MODELS
+WILL BE DELETED, AS THIS CODE IS ALSO PRESENT AFTER THE TRAINING LOOP IN THE MAIN SCRIPT
+"""
+
 @dataclass
 class Args:
     run_dir: Path  # something like logs/... (the dir that contains the .pt model)

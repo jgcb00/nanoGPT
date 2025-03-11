@@ -14,6 +14,11 @@ from arch.utils import get_model
 
 from datasets import load_dataset
 
+"""
+USED FOR EVALUATING ALREADY, OLD, TRAINED MODELS
+WILL BE DELETED, AS THIS CODE IS ALSO PRESENT AFTER THE TRAINING LOOP IN THE MAIN SCRIPT
+"""
+
 ctx_len = 16384 # 4 * 4096, the training context length
 batch_size = 4 # for that fits on A100-65GB
 
