@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from lm_eval.api.model import LM
 from lm_eval.api.instance import Instance
 
+from config import NanoConfig
 from arch.gpt import GPT
 from arch.dragon import Dragon
 
@@ -26,10 +27,12 @@ BSZ_FOR_TASKS = {
     "arc_challenge": 64,
     "piqa": 64,
     "winogrande": 64,
+    "openbookqa": 64,
+    "lambada": 64,
 }
 
 class NanoLM(LM):
-    def __init__(self, model: Union[GPT, Dragon] = None, config=None, enc: tiktoken.core.Encoding = None, batch_size: int = 32):
+    def __init__(self, model: Union[GPT, Dragon] = None, config: NanoConfig = None, enc: tiktoken.core.Encoding = None, batch_size: int = 32):
         super().__init__()
 
         self.model = model

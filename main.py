@@ -24,21 +24,6 @@ from arch.data.distributed_data_loader import DistributedDataLoader
 from arch.optim.filter_optimizer import create_filtered_optimizer, create_2D_filtered_optimizer
 
 # TODO:
-
-# del unused imports
-# tests
-# GQA : test (165M run)
-# cross-layer kv sharing : test (165M run)
-# global/local attn : test (165M run)
-# combinations of the above, for normal and diff attn, for gpt and dragon, for mamba2 and gdn?
-
-# features
-# add the rest of the hymba features : ¯\_(ツ)_/¯
-# stableSPAM ? or we stick with muon?
-# curse of depth
-# seqlen warmup ? (or simply window size warmup as in megatron)
-# bigger model scale + bigger seqlen
-# lr!! for muon, cf kimi paper (+https://x.com/jxbz/status/1895907289183518847)
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams?
 # next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
 
@@ -180,6 +165,7 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 if master_process:
     wandb.init(project='nanoGPT', name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
 
+"""
 training_time_ms = 0
 # start the clock
 torch.cuda.synchronize()
@@ -279,4 +265,114 @@ for step in range(nconfig.num_iterations + 1):
     if master_process:
         wandb.log({'train_loss': train_loss.item(), 'step_avg_time': approx_time/timed_steps, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)}, 'grad_norm': grad_norm.item()}, step=step)
 
-print0(f"peak memory consumption: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
+print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
+print0("Training complete.")
+"""
+# ====================================== EVAL - BENCHMARKS ======================================
+if nconfig.eval_benchmarks and master_process:
+    import lm_eval
+    import tiktoken
+    from arch.lm import NanoLM
+    
+    # load tokenizer
+    with open(nconfig.eval_tokenizer_path, 'rb') as f:
+        enc_pickled = pickle.load(f)
+    enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
+    
+    print(f"Evaluating on tasks: {nconfig.eval_benchmarks_tasks} with 1GPUs")
+
+    lm = NanoLM(
+        model=raw_model, 
+        config=nconfig, 
+        enc=enc, 
+    )
+
+    # evaluate
+    results = lm_eval.simple_evaluate(lm, tasks=nconfig.eval_benchmarks_tasks, limit=1.)
+
+    # save results (with the names of the tasks in the file)
+    result_file_path = os.path.join(logdir, f"results_{'_'.join(nconfig.eval_benchmarks_tasks)}.json")
+    with open(result_file_path, 'w') as f:
+        json.dump(results['results'], f)
+
+    # log to wandb
+    for task, result in results['results'].items():
+        task_name = result.get('alias')
+        acc = result.get('acc,none')
+        acc_norm = result.get('acc,norm')
+        # could cause problem with tasks that have an accuracy attribute in their results
+        
+        wandb.log({"eval/"+task_name+"_acc": acc, "eval/"+task_name+"_acc_norm": acc_norm}, step=nconfig.num_iterations)
+
+    print("Done evaluating.")
+
+# ====================================== EVAL - LONG-CONTEXT PG19 ======================================
+if nconfig.evalpg19 and master_process:
+    import tiktoken
+    from datasets import load_dataset
+    from tqdm import tqdm
+    import matplotlib.pyplot as plt
+
+    # load tokenizer
+    with open(nconfig.eval_tokenizer_path, 'rb') as f:
+        enc_pickled = pickle.load(f)
+    enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
+
+    print("Evaluating on long-context PG19.")
+
+    # load PG19 dataset
+    ds = load_dataset("emozilla/pg19")
+
+    accumulated_losses = torch.zeros(nconfig.evalpg19_ctx_len, device='cuda')
+    example_count = 0
+    batch_examples = []
+
+    for example in tqdm(ds["train"], total=nconfig.evalpg19_num_samples):
+        if nconfig.evalpg19_num_samples > 0 and example_count >= nconfig.evalpg19_num_samples:
+            break
+
+        input_enc = enc.encode(example['text'])
+
+        if len(input_enc) < nconfig.evalpg19_ctx_len:
+            continue
+
+        batch_examples.append(input_enc[:nconfig.evalpg19_ctx_len+1])
+
+        if len(batch_examples) == nconfig.evalpg19_batch_size:
+            x = torch.tensor([ex[:-1] for ex in batch_examples], dtype=torch.long, device='cuda')
+            y = torch.tensor([ex[1:] for ex in batch_examples], dtype=torch.long, device='cuda')
+
+            with torch.no_grad():
+                with ctx:
+                    logits = model(x, just_logits=True)
+                B, L, vocab_size = logits.size()
+                token_losses = F.cross_entropy(logits.view(-1, vocab_size), y.view(-1), reduction='none')
+                token_losses = token_losses.view(B, L)
+            accumulated_losses += token_losses.sum(dim=0)
+            example_count += nconfig.evalpg19_batch_size
+            batch_examples = []
+
+    per_token_loss = accumulated_losses / example_count # L(i)
+    per_token_loss_cpu = per_token_loss.cpu().numpy()
+
+    # save tensor and plot to file
+    torch.save(per_token_loss, os.path.join(logdir, f'per_token_loss.pt'))
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(per_token_loss_cpu)
+    plt.title('Per-token Loss L(i) Over Position', fontsize=14)
+    plt.xlabel('Token Position i', fontsize=12)
+    plt.ylabel('Loss', fontsize=12)
+    plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(logdir, 'per_token_loss.png'), dpi=300)
+
+    # log to wandb
+    data = [[i, loss] for i, loss in enumerate(per_token_loss_cpu)]
+    table = wandb.Table(data=data, columns=["token_position", "loss"])
+    wandb.log({"eval/per_token_loss_plot": wandb.plot.line(table, "token_position", "loss", title="Loss per Token")}, step=nconfig.num_iterations)
+
+    print("Done evaluating.")
+
+dist.destroy_process_group()

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import List
 
 # todo: on pourra utiliser un typing union pour forcer certaines valeurs c'est plus propre
 # gpt: n_layers=12, expand_factor=1; dragon: n_layers=7, expand_factor=2
@@ -72,6 +73,17 @@ class NanoConfig:
 
     # inference related
     vocab_size_real : int = 50257
+
+    # eval - benchmarks (at the end of training)
+    eval_benchmarks: bool = True
+    eval_benchmarks_tasks: str = 'hellaswag,openbookqa,arc_easy,arc_challenge,piqa,winogrande,lambada,openbookqa'
+    eval_tokenizer_path: str = 'data/enc.pkl'
+
+    # eval - long-context PG19
+    evalpg19 : bool = True
+    evalpg19_ctx_len : int = 16384
+    evalpg19_num_samples : int = 128
+    evalpg19_batch_size : int = 4
     
     def __post_init__(self):
         # check for valid model
@@ -90,3 +102,5 @@ class NanoConfig:
             assert self.n_heads % 2 == 0, "n_heads must be even when using diff attention"
             assert self.n_kv_heads % 2 == 0, "n_kv_heads must be even when using diff attention"
         assert self.rmsnorm == False, "rmsnorm is not supported in inference for now"
+
+        self.eval_benchmarks_tasks = self.eval_benchmarks_tasks.split(',')
