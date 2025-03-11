@@ -164,7 +164,6 @@ schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimize
 if master_process:
     wandb.init(project='nanoGPT', name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
 
-"""
 training_time_ms = 0
 # start the clock
 torch.cuda.synchronize()
@@ -266,7 +265,7 @@ for step in range(nconfig.num_iterations + 1):
 
 print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
 print0("Training complete.")
-"""
+
 # ====================================== EVAL - BENCHMARKS ======================================
 if nconfig.eval_benchmarks and master_process:
     import lm_eval
