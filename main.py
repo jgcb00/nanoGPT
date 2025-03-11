@@ -14,7 +14,6 @@ import wandb
 
 import numpy as np
 import torch
-from torch import nn
 import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP

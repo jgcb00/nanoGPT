@@ -90,9 +90,9 @@ class NanoConfig:
         assert self.model in ["gpt", "dragon", "gated-delta-net", "mamba2"]
         # check for valid attention type
         assert self.attn_type in ["normal", "diff"]
-        # check for valid lin attn type
+        # check for valid linear attention type
         assert self.lin_attn_type in ["mamba2", "gdn"]
-        # check for valid optim type
+        # check for valid optimizer type
         assert self.optim in ["adamw", "spam", "muon", "stable-spam"]
         # check for valid n_kv_heads
         if self.n_kv_heads == 0:
