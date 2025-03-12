@@ -59,6 +59,9 @@ class NanoConfig:
     # data
     vocab_size : int = 50304
     sequence_length : int = 1024 # sequence length, in tokens
+    use_patch_level_training: bool = False
+    patch_size: int = 4
+    patch_training_fraction: float = 0.67
     input_bin : str = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
     input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
     

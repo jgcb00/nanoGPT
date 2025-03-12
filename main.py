@@ -76,6 +76,11 @@ print0("="*100)
 print0(nconfig)
 print0("="*100)
 
+if master_process and nconfig.use_patch_level_training:
+    print0("Using patch-level training. Modifying the batch size to account for the patch size.")
+    #nconfig.batch_size = nconfig.patch_size * nconfig.batch_size
+    nconfig.device_batch_size = nconfig.patch_size * nconfig.device_batch_size
+
 # convenience variables
 B, T = nconfig.device_batch_size, nconfig.sequence_length
 # calculate the number of steps to take in the val loop.
@@ -262,6 +267,74 @@ for step in range(nconfig.num_iterations + 1):
     print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms")
     if master_process:
         wandb.log({'train_loss': train_loss.item(), 'step_avg_time': approx_time/timed_steps, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)}, 'grad_norm': grad_norm.item()}, step=step)
+
+    # monitor patch/token-level training
+    if nconfig.use_patch_level_training and step > nconfig.patch_training_fraction*nconfig.num_iterations:
+        print0("Switching to full sequence training.")
+        nconfig.use_patch_level_training = False
+
+        # reset any stateful layers
+        model.eval()
+        model.train()
+
+        #nconfig.batch_size = nconfig.batch_size // nconfig.patch_size
+        nconfig.device_batch_size = nconfig.device_batch_size // nconfig.patch_size
+
+        # convenience variables
+        B, T = nconfig.device_batch_size, nconfig.sequence_length
+        # calculate the number of steps to take in the val loop.
+        assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
+        val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
+        # calculate the steps of gradient accumulation required to attain the desired global batch size.
+        assert nconfig.batch_size % (B * ddp_world_size) == 0
+        train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
+
+        # recompute current_position in the data loaders (we dont interrupt the stream of tokens this way)
+        current_pos = train_loader.current_position - train_loader.process_rank * train_loader.B * T # same on each rank
+        train_loader.B = B
+        train_loader.current_position = current_pos + train_loader.process_rank * train_loader.B * T
+        current_pos = val_loader.current_position - val_loader.process_rank * val_loader.B * T # same on each rank
+        val_loader.B = B
+        val_loader.current_position = current_pos + val_loader.process_rank * val_loader.B * T
+
+        # get the next batch (erase the prev one that used the older B)
+        x, y = train_loader.next_batch()
+
+        # reset optimizer state  #todo: clean and re-use the optimizer creation code
+        del optimizers
+        match nconfig.optim:
+            case 'adamw':
+                optimizer = AdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
+                optimizers = [optimizer]
+            case 'spam':
+                optimizer = SPAMAdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
+                optimizers = [optimizer]
+            case 'muon':
+                optimizer1 = AdamW([raw_model.transformer.wte.weight], lr=nconfig.learning_rate * 10, betas=(0.9, 0.95), fused=True)
+                optimizer2 = AdamW([raw_model.lm_head.weight], lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True)
+                optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95, weight_decay=nconfig.weight_decay)
+                optimizers = [optimizer1, optimizer2, optimizer3]
+                if optimizer4 := create_filtered_optimizer(AdamW, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True):
+                    optimizers.append(optimizer4)
+            case 'upgraded-muon':
+                optimizer1 = SPAMAdamW([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), weight_decay=0.01)
+                optimizer2 = SPAMAdamW([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), weight_decay=0.01)
+                optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
+                optimizers = [optimizer1, optimizer2, optimizer3]
+                if optimizer4 := create_filtered_optimizer(SPAMAdamW, raw_model.transformer.h.parameters(), lr=1e-3, betas=(0.9, 0.95), fused=True):
+                    optimizers.append(optimizer4)
+            case 'stable-spam':
+                optimizer = StableSPAM(model.parameters(), lr=nconfig.learning_rate, weight_decay=nconfig.weight_decay)
+                optimizers = [optimizer]
+            case _:
+                raise ValueError(f"Optimizer {nconfig.optim} not supported")
+
+        # reset the learning rate scheduler (update the step count for each scheduler to match the current training progress)
+        del schedulers
+        schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
+        current_step_fraction = step / nconfig.num_iterations
+        for scheduler in schedulers:
+            scheduler.last_epoch = int(current_step_fraction*nconfig.num_iterations) - 1
 
 print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
 print0("Training complete.")
