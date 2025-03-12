@@ -127,8 +127,17 @@ class Dragon(nn.Module):
         #self.lm_head.weight.data.zero_()
 
     def forward(self, idx, targets=None, caches=None, just_logits=False):
+        B, L = idx.size()
+
         # forward the Dragon model itself
-        x = self.transformer.wte(idx) # token embeddings of shape (b, t, d_model)
+        x = self.transformer.wte(idx) # token embeddings of shape (B, L, d_model)
+
+        if self.config.use_patch_level_training:
+            x = x.view(B, L//self.config.patch_size, self.config.patch_size, -1).mean(2) # (B, num_patches, D)
+            x = x[:, :-1] # remove the last patch
+            targets = targets[:, self.config.patch_size-1:-1] # targets is already shifted by one
+            # so we remove only the first patch_size-1 tokens, as well as the last
+
         x = F.rms_norm(x, (x.size(-1),))
 
         if caches is None:
@@ -149,15 +158,25 @@ class Dragon(nn.Module):
             logits = self.lm_head(x)
             return logits
 
-        if targets is not None:
-            # if we are given some desired targets also calculate the loss
-            if self.config.fused_loss_computation:
+        if targets is not None: # if we are given some desired targets also calculate the loss
+            if self.config.fused_loss_computation and not self.config.use_patch_level_training:
                 criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
                 loss = criterion(x, targets, self.lm_head.weight)
             else:
                 logits = self.lm_head(x)
                 logits = logits.float() # use tf32/fp32 for logits
-                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+                if not self.config.use_patch_level_training:
+                    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+                else:
+                    targets = targets.reshape(-1, self.config.patch_size)
+                    loss = 0
+                    log_probs = F.log_softmax(logits.view(-1, logits.size(-1)), dim=1)
+                    for i in range(self.config.patch_size):
+                        loss += F.nll_loss(log_probs, targets[:, i], ignore_index=-1)
+                    loss /= self.config.patch_size
+
+                    # todo: make compatible with fused loss
+                    
             return loss
         elif caches is None: # inference without caching (not recommended)
             # inference-time mini-optimization: only forward the lm_head on the very last position

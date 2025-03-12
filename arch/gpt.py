@@ -135,7 +135,6 @@ class GPT(nn.Module):
                     loss /= self.config.patch_size
 
                     # todo: make compatible with fused loss
-                    # tood: same for dragon arch
                     
             return loss
         elif caches is None: # inference without caching (not recommended)
