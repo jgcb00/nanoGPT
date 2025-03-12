@@ -270,7 +270,7 @@ for step in range(nconfig.num_iterations + 1):
 
     # monitor patch/token-level training
     if nconfig.use_patch_level_training and step > nconfig.patch_training_fraction*nconfig.num_iterations:
-        print0("Switching to full sequence training.")
+        print0("Switching to token-level training.")
         nconfig.use_patch_level_training = False
 
         # reset any stateful layers
@@ -335,6 +335,8 @@ for step in range(nconfig.num_iterations + 1):
         current_step_fraction = step / nconfig.num_iterations
         for scheduler in schedulers:
             scheduler.last_epoch = int(current_step_fraction*nconfig.num_iterations) - 1
+
+        torch.cuda.empty_cache()
 
 print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
 print0("Training complete.")

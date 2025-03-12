@@ -22,7 +22,7 @@ ARCH_ARGS=(
     --expand_factor 1
     --attn_type normal
     --lin_attn_type mamba2
-    --no-fused_loss_computation
+    --fused_loss_computation
 )
 
 ATTENTION_ARGS=(
@@ -53,7 +53,7 @@ OPTIM_ARGS=(
     --optim adamw
     --batch_size 512
     --device_batch_size 32
-    --num_iterations 50
+    --num_iterations 100
     --learning_rate 1e-4
     --warmup_iters 0
     --warmdown_iters 0

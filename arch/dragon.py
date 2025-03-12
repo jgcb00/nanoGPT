@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from fla.modules import FusedLinearCrossEntropyLoss
+from fla.modules import FusedLinearCrossEntropyLoss, FusedCrossEntropyLoss
 
 from config import NanoConfig
 from arch.mlp import MLP
@@ -159,25 +159,69 @@ class Dragon(nn.Module):
             return logits
 
         if targets is not None: # if we are given some desired targets also calculate the loss
-            if self.config.fused_loss_computation and not self.config.use_patch_level_training:
-                criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
-                loss = criterion(x, targets, self.lm_head.weight)
-            else:
-                logits = self.lm_head(x)
-                logits = logits.float() # use tf32/fp32 for logits
-                if not self.config.use_patch_level_training:
-                    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-                else:
+            if self.config.use_patch_level_training:
+                if self.config.fused_loss_computation:
+
+                    # regular, modified
+                    """
+                    logits = self.lm_head(x)
+                    logits = logits.float() # use tf32/fp32 for logits
+
                     targets = targets.reshape(-1, self.config.patch_size)
+
+                    loss = 0
+                    for i in range(self.config.patch_size):
+                        loss += F.cross_entropy(logits.view(-1, logits.size(-1)), targets[:, i], ignore_index=-1)
+                    loss /= self.config.patch_size"
+                    """
+
+                    # FusedLinearCrossEntropyLoss
+                    """
+                    criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
+                    targets = targets.reshape(-1, self.config.patch_size)
+
+                    loss = 0
+                    for i in range(self.config.patch_size):
+                        loss += criterion(x, targets[:, i], self.lm_head.weight)
+                    loss /= self.config.patch_size
+                    """
+
+                    # FusedCrossEntropyLoss
+                    criterion = FusedCrossEntropyLoss(ignore_index=-1)
+                    logits = self.lm_head(x)
+                    logits = logits.float() # use tf32/fp32 for logits
+                    targets = targets.reshape(-1, self.config.patch_size)
+                    loss = 0
+                    for i in range(self.config.patch_size):
+                        loss += criterion(logits.view(-1, logits.size(-1)), targets[:, i])
+                    loss /= self.config.patch_size
+
+                else:
+                    logits = self.lm_head(x)
+                    logits = logits.float() # use tf32/fp32 for logits
+
+                    targets = targets.reshape(-1, self.config.patch_size)
+
                     loss = 0
                     log_probs = F.log_softmax(logits.view(-1, logits.size(-1)), dim=1)
                     for i in range(self.config.patch_size):
                         loss += F.nll_loss(log_probs, targets[:, i], ignore_index=-1)
                     loss /= self.config.patch_size
-
-                    # todo: make compatible with fused loss
+            else:
+                if self.config.fused_loss_computation:
+                    criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
+                    loss = criterion(x, targets, self.lm_head.weight)
                     
+                    #criterion = FusedCrossEntropyLoss(ignore_index=-1)
+                    #logits = self.lm_head(x)
+                    #logits = logits.float() # use tf32/fp32 for logits
+                    #loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
+                else:
+                    logits = self.lm_head(x)
+                    logits = logits.float() # use tf32/fp32 for logits
+                    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
             return loss
+
         elif caches is None: # inference without caching (not recommended)
             # inference-time mini-optimization: only forward the lm_head on the very last position
             logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
