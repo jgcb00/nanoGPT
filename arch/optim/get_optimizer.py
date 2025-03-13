@@ -35,3 +35,4 @@ def get_optimizers(model, nconfig, raw_model):
             optimizers = [optimizer]
         case _:
             raise ValueError(f"Optimizer {nconfig.optim} not supported")
+    return optimizers

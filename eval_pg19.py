@@ -19,7 +19,7 @@ USED FOR EVALUATING ALREADY, OLD, TRAINED MODELS
 WILL BE DELETED, AS THIS CODE IS ALSO PRESENT AFTER THE TRAINING LOOP IN THE MAIN SCRIPT
 """
 
-def eval_pg19(log_dir, model, nsamples, ctx_len, log_wandb=True):
+def eval_pg19(log_dir, model, nsamples, ctx_len, batch_size, log_wandb=True):
     log_dir = Path(log_dir)
     
     # load tokenizer
@@ -119,4 +119,4 @@ if __name__ == "__main__":
     new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
     model.load_state_dict(new_state_dict)
     
-    eval_pg19(args.run_dir, model, args.num_samples, ctx_len, log_wandb=False)
+    eval_pg19(args.run_dir, model, args.num_samples, ctx_len, 4, log_wandb=False)

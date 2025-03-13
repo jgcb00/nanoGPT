@@ -1,4 +1,5 @@
 data/fineweb10B/
+data/fineweb100B/
 __pycache__/
 logs/
 *.out

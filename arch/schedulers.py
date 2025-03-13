@@ -39,19 +39,19 @@ def get_linear_slow(nconfig : NanoConfig, it):
         return (it+1) / nconfig.warmup_iters
     # 2) linear decay for a while from 1 to 0.5 :
     elif it < nconfig.num_iterations - nconfig.warmdown_iters:
-        return 1 - (0.5 * it / (nconfig.num_iterations - nconfig.warmup_iters - nconfig.warmdown_iters))
+        return 1 - (1/5 * it / (nconfig.num_iterations - nconfig.warmup_iters - nconfig.warmdown_iters))
     # 3) linear warmdown
     else:
         # warmup to 2 times, the min of cosine decay, and then linearly decay to 0
         #if it < nconfig.num_iterations - nconfig.warmdown_iters + 50:
         #    warm_up_it = it - (nconfig.num_iterations - nconfig.warmdown_iters)
         #    return 0.2 * (warm_up_it + 1) / 50  
-        decay_ratio = 0.5 * (nconfig.num_iterations - it) / (nconfig.warmdown_iters)
+        decay_ratio = 0.8 * (nconfig.num_iterations - it) / (nconfig.warmdown_iters)
         return decay_ratio
 
 
 def get_schedulers(optimizers, nconfig : NanoConfig):
-    match nconfig.optim:
+    match nconfig.scheduler:
         case 'moonlight':
             func = get_lr_moonlight
         case 'wsd':
