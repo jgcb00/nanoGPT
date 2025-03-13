@@ -14,25 +14,8 @@ from arch.dragon import Dragon
 
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
-BSZ_FOR_TASKS = {
-    "hellaswag": 128,
-    "swde": 32,
-    "squadv2": 32,
-    "squad_completion" : 32,
-    "fda": 32,
-    "nq_open": 32,
-    "mmlu": 32,
-    "triviaqa": 64,
-    "arc_easy": 64,
-    "arc_challenge": 64,
-    "piqa": 64,
-    "winogrande": 64,
-    "openbookqa": 64,
-    "lambada": 64,
-}
-
 class NanoLM(LM):
-    def __init__(self, model: Union[GPT, Dragon] = None, config: NanoConfig = None, enc: tiktoken.core.Encoding = None, batch_size: int = 32):
+    def __init__(self, model: Union[GPT, Dragon] = None, config: NanoConfig = None, enc: tiktoken.core.Encoding = None, batch_size: int = 1):
         super().__init__()
 
         self.model = model
@@ -52,9 +35,6 @@ class NanoLM(LM):
         print("loglikelihood")
 
         task = requests[0].task_name
-        
-        #if task in BSZ_FOR_TASKS:
-        #    self.batch_size = BSZ_FOR_TASKS[task]
         self.batch_size = 1
 
         outputs = []
@@ -128,9 +108,6 @@ class NanoLM(LM):
         print("generate_until")
 
         task = requests[0].task_name
-        
-        #if task in BSZ_FOR_TASKS:
-        #    self.batch_size = BSZ_FOR_TASKS[task]
         self.batch_size = 1
         
         outputs = []
@@ -159,7 +136,7 @@ class NanoLM(LM):
                 if 'do_sample' in kwargs:
                     do_sample = kwargs['do_sample']
                 else:
-                    do_sample = True
+                    do_sample = False
                 if 'temperature' in kwargs:
                     temperature = kwargs['temperature']
                 else:

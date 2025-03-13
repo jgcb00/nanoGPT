@@ -280,7 +280,7 @@ if nconfig.eval_benchmarks and master_process:
         enc_pickled = pickle.load(f)
     enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
     
-    print(f"Evaluating on tasks: {nconfig.eval_benchmarks_tasks} with 1GPUs")
+    print0(f"Evaluating on tasks: {nconfig.eval_benchmarks_tasks} with 1GPUs")
 
     lm = NanoLM(
         model=raw_model, 
@@ -305,10 +305,9 @@ if nconfig.eval_benchmarks and master_process:
         
         wandb.log({"eval/"+task_name+"_acc": acc, "eval/"+task_name+"_acc_norm": acc_norm}, step=nconfig.num_iterations)
 
-    print("Done evaluating.")
+    print0("Done evaluating benchmarks.")
 
 # ====================================== EVAL - LONG-CONTEXT PG19 ======================================
 if nconfig.evalpg19 and master_process:
     eval_pg19(logdir, model, nconfig.evalpg19_num_samples, nconfig.evalpg19_ctx_len, log_wandb=True)
-    print("Done evaluating.")
-
+    print0("Done evaluating PG19.")

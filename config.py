@@ -80,7 +80,7 @@ class NanoConfig:
 
     # eval - benchmarks (at the end of training)
     eval_benchmarks: bool = True
-    eval_benchmarks_tasks: str = 'hellaswag,openbookqa,arc_easy,arc_challenge,piqa,winogrande,lambada,squadv2'
+    eval_benchmarks_tasks: str = 'hellaswag,swde,fda,openbookqa,arc_easy,arc_challenge,piqa,winogrande,lambada,squadv2'
     eval_tokenizer_path: str = 'data/enc.pkl'
 
     # eval - long-context PG19

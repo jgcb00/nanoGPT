@@ -22,7 +22,6 @@ WILL BE DELETED, AS THIS CODE IS ALSO PRESENT AFTER THE TRAINING LOOP IN THE MAI
 class Args:
     run_dir: Path  # something like logs/... (the dir that contains the .pt model)
     tasks: str  # list of tasks to evaluate on (hellaswag, winogrande, ...)
-    batch_size: int = 32
 
     def __post_init__(self):
         self.tasks = self.tasks.split(',')
@@ -57,13 +56,12 @@ lm = NanoLM(
     model=model, 
     config=config, 
     enc=enc, 
-    batch_size=args.batch_size,
 )
 
 print(f"Evaluating on tasks: {args.tasks} with 1GPUs")
 
 # evaluate
-results = lm_eval.simple_evaluate(lm, tasks=args.tasks, limit=1.)
+results = lm_eval.simple_evaluate(lm, tasks=args.tasks, limit=0.1)
 
 # export all the results to a json file (to see the completions)
 result_file_path = args.run_dir / f"results_{'_'.join(args.tasks)}.json"
