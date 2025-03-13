@@ -6,12 +6,11 @@ source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/a
 #export CUDA_VISIBLE_DEVICES=0
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export HF_DATASETS_OFFLINE="1"
-#export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
+export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 #torch run here can cause issue due to the port that might be already in used by another process
 python eval.py \
     --run_dir ${1} \
-    --tasks hellaswag,swde,fda,arc_easy,arc_challenge,piqa,winogrande,lambada,openbookqa,squadv2 \
-    --batch_size ${2}
+    --tasks hellaswag,swde,fda,arc_easy,arc_challenge,piqa,winogrande,lambada,openbookqa,squadv2
 
-#hellaswag,swde,squadv2,squad_completion,fda,nq_open,drop,mmlu,triviaqa,arc_easy,arc_challenge,piqa,winogrande
+#hellaswag,swde,fda,arc_easy,arc_challenge,piqa,winogrande,lambada,openbookqa,squadv2
