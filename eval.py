@@ -34,7 +34,7 @@ args = tyro.cli(Args)
 with open(args.run_dir / 'config.pkl', 'rb') as f:
     config: NanoConfig = pickle.load(f)
 config.rmsnorm = False
-config.disable_scalable_softmax_for_local = False # for loading old runs
+config.disable_scalable_softmax_for_local = False # False for loading old runs, True for newer ones
 
 # define and load model, tokenizer
 model = get_model(config)
@@ -65,8 +65,13 @@ print(f"Evaluating on tasks: {args.tasks} with 1GPUs")
 # evaluate
 results = lm_eval.simple_evaluate(lm, tasks=args.tasks, limit=0.1)
 
-# save results (with the names of the tasks in the file)
+# export all the results to a json file (to see the completions)
 result_file_path = args.run_dir / f"results_{'_'.join(args.tasks)}.json"
+with open(result_file_path, 'w') as f:
+    json.dump(results, f)
+
+# save the scores in a separate file
+result_file_path = args.run_dir / f"scores_{'_'.join(args.tasks)}.json"
 with open(result_file_path, 'w') as f:
     json.dump(results['results'], f)
 print("Done evaluating.")
