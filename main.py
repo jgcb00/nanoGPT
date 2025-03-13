@@ -79,9 +79,10 @@ print0(nconfig)
 print0("="*100)
 
 if master_process and nconfig.use_patch_level_training:
-    print0("Using patch-level training. Modifying the batch size to account for the patch size.")
-    #nconfig.batch_size = nconfig.patch_size * nconfig.batch_size
-    nconfig.device_batch_size = nconfig.patch_size * nconfig.device_batch_size
+    prev_device_batch_size = nconfig.device_batch_size
+    prev_train_accumulation_steps = nconfig.batch_size // (prev_device_batch_size * ddp_world_size)
+    nconfig.device_batch_size = min(nconfig.patch_size, prev_train_accumulation_steps) * prev_device_batch_size
+    print0(f"Using patch-level training. Modifying the device batch size to account for the patch size, from {prev_device_batch_size} to {nconfig.device_batch_size}.")
 
 # convenience variables
 B, T = nconfig.device_batch_size, nconfig.sequence_length
@@ -232,15 +233,11 @@ for step in range(nconfig.num_iterations + 1):
         model.eval()
         model.train()
 
-        #nconfig.batch_size = nconfig.batch_size // nconfig.patch_size
-        nconfig.device_batch_size = nconfig.device_batch_size // nconfig.patch_size
-
-        # convenience variables
+        # fallback to the original device batch size
+        nconfig.device_batch_size = prev_device_batch_size
         B, T = nconfig.device_batch_size, nconfig.sequence_length
-        # calculate the number of steps to take in the val loop.
         assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
         val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
-        # calculate the steps of gradient accumulation required to attain the desired global batch size.
         assert nconfig.batch_size % (B * ddp_world_size) == 0
         train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
 

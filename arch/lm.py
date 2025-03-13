@@ -52,8 +52,10 @@ class NanoLM(LM):
         print("loglikelihood")
 
         task = requests[0].task_name
-        if task in BSZ_FOR_TASKS:
-            self.batch_size = BSZ_FOR_TASKS[task]
+        
+        #if task in BSZ_FOR_TASKS:
+        #    self.batch_size = BSZ_FOR_TASKS[task]
+        self.batch_size = 1
 
         outputs = []
 
@@ -126,9 +128,11 @@ class NanoLM(LM):
         print("generate_until")
 
         task = requests[0].task_name
-        if task in BSZ_FOR_TASKS:
-            self.batch_size = BSZ_FOR_TASKS[task]
-
+        
+        #if task in BSZ_FOR_TASKS:
+        #    self.batch_size = BSZ_FOR_TASKS[task]
+        self.batch_size = 1
+        
         outputs = []
         for i in tqdm.tqdm(range(0, len(requests), self.batch_size)):
             batch = requests[i:i+self.batch_size]
@@ -195,6 +199,8 @@ class NanoLM(LM):
         # prompt: (b, T) tensor
         # outputs: (b, t) tensor
 
+        assert prompt.size(0) == 1, "Batch size must be 1 for now"
+
         if top_k is not None:
             top_k = min(top_k, self.config.vocab_size)
         
@@ -230,6 +236,8 @@ class NanoLM(LM):
     @torch.no_grad()
     def generate(self, prompts, n_tokens: List[int], samples: Union[bool, List[bool]] = True, top_ks: Union[None, int, List[Optional[int]]] = None, temperatures: Union[float, List[float]] = 1.0, stop_tokens: List[Optional[List[int]]] = None):
         # prompts : list of B x (L) tensors
+
+        assert len(prompts) == 1, "Batch size must be 1 for now"
 
         B = len(prompts)
         min_len = min(prompt.size(0) for prompt in prompts)
