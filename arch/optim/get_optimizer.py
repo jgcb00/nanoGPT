@@ -1,6 +1,6 @@
 from arch.optim.filter_optimizer import create_filtered_optimizer, create_2D_filtered_optimizer
 
-def get_optimizer(model, nconfig, raw_model):
+def get_optimizers(model, nconfig, raw_model):
     match nconfig.optim:
         case 'adamw':
             from torch.optim import AdamW
