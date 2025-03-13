@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment17.err            # standard error file
-#SBATCH --output=logs/experiment17.out           # standard output file
+#SBATCH --error=logs/experiment17-ter.err            # standard error file
+#SBATCH --output=logs/experiment17-ter.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -46,7 +46,7 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp16_Dragon-L-full-muon \
+    --run_name exp17_Dragon-L-full-muon_cosine_LR-high_LR \
     --model dragon \
     --d_model 1280 \
     --n_heads 20 \
@@ -54,6 +54,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --n_layers 20 \
     --use_kv_sharing \
     --attn_type diff \
+    --no-qk-norm \
     --use_swa \
     --scalable_softmax \
     --expand_factor 2 \
@@ -61,9 +62,9 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --optim muon \
     --batch_size 64 \
     --device_batch_size 2 \
-    --learning_rate 9.7e-4 \
+    --learning_rate 1.4e-3 \
     --num_iterations 32990 \
-    --warmup_iters 0 \
+    --warmup_iters 50 \
     --warmdown_iters 4949 \
     --weight_decay 0.1 \
     --sequence_length 4736 \

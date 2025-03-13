@@ -20,11 +20,13 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from arch.utils import get_model
 from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
-from arch.optim.filter_optimizer import create_filtered_optimizer, create_2D_filtered_optimizer
-
+from arch.optim.get_optimizer import get_optimizers
+from arch.schedulers import get_schedulers
+from eval_pg19 import eval_pg19
 # TODO:
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams?
 # next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
+# learning rate decay scheduler (linear warmup and warmdown)
 
 nconfig = tyro.cli(NanoConfig)
 assert nconfig.run_name != "", "Please provide a run name for this training run."
@@ -115,55 +117,8 @@ model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module # always contains the "raw" unwrapped model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 # init the optimizer(s)
-match nconfig.optim:
-    case 'adamw':
-        from torch.optim import AdamW
-        optimizer = AdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
-        optimizers = [optimizer]
-    case 'spam':
-        from arch.optim.spam import SPAMAdamW
-        optimizer = SPAMAdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
-        optimizers = [optimizer]
-    case 'muon':
-        from torch.optim import AdamW
-        from arch.optim.muon import Muon
-        optimizer1 = AdamW([raw_model.transformer.wte.weight], lr=nconfig.learning_rate * 10, betas=(0.9, 0.95), fused=True)
-        optimizer2 = AdamW([raw_model.lm_head.weight], lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True)
-        optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95, weight_decay=nconfig.weight_decay)
-        optimizers = [optimizer1, optimizer2, optimizer3]
-        if optimizer4 := create_filtered_optimizer(AdamW, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True):
-            optimizers.append(optimizer4)
-            
-    case 'upgraded-muon':
-        from arch.optim.spam import SPAMAdamW
-        from arch.optim.muon import Muon
-        optimizer1 = SPAMAdamW([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), weight_decay=0.01)
-        optimizer2 = SPAMAdamW([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), weight_decay=0.01)
-        optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
-        optimizers = [optimizer1, optimizer2, optimizer3]
-        if optimizer4 := create_filtered_optimizer(SPAMAdamW, raw_model.transformer.h.parameters(), lr=1e-3, betas=(0.9, 0.95), fused=True):
-            optimizers.append(optimizer4)        
-    case 'stable-spam':
-        from arch.optim.stableSPAM import StableSPAM
-        optimizer = StableSPAM(model.parameters(), lr=nconfig.learning_rate, weight_decay=nconfig.weight_decay)
-        optimizers = [optimizer]
-    case _:
-        raise ValueError(f"Optimizer {nconfig.optim} not supported")
-
-# learning rate decay scheduler (linear warmup and warmdown)
-def get_lr(it):
-    assert it <= nconfig.num_iterations
-    # 1) linear warmup for warmup_iters steps
-    if it < nconfig.warmup_iters:
-        return (it+1) / nconfig.warmup_iters
-    # 2) constant lr for a while
-    elif it < nconfig.num_iterations - nconfig.warmdown_iters:
-        return 1.0
-    # 3) linear warmdown
-    else:
-        decay_ratio = (nconfig.num_iterations - it) / nconfig.warmdown_iters
-        return decay_ratio
-schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
+optimizers = get_optimizers(model, nconfig, raw_model)
+schedulers = get_schedulers(optimizers, nconfig)
 
 # begin wandb logging
 if master_process:
@@ -302,36 +257,11 @@ for step in range(nconfig.num_iterations + 1):
 
         # reset optimizer state  #todo: clean and re-use the optimizer creation code
         del optimizers
-        match nconfig.optim:
-            case 'adamw':
-                optimizer = AdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
-                optimizers = [optimizer]
-            case 'spam':
-                optimizer = SPAMAdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
-                optimizers = [optimizer]
-            case 'muon':
-                optimizer1 = AdamW([raw_model.transformer.wte.weight], lr=nconfig.learning_rate * 10, betas=(0.9, 0.95), fused=True)
-                optimizer2 = AdamW([raw_model.lm_head.weight], lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True)
-                optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95, weight_decay=nconfig.weight_decay)
-                optimizers = [optimizer1, optimizer2, optimizer3]
-                if optimizer4 := create_filtered_optimizer(AdamW, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True):
-                    optimizers.append(optimizer4)
-            case 'upgraded-muon':
-                optimizer1 = SPAMAdamW([raw_model.transformer.wte.weight], lr=0.3, betas=(0.9, 0.95), weight_decay=0.01)
-                optimizer2 = SPAMAdamW([raw_model.lm_head.weight], lr=0.002, betas=(0.9, 0.95), weight_decay=0.01)
-                optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95)
-                optimizers = [optimizer1, optimizer2, optimizer3]
-                if optimizer4 := create_filtered_optimizer(SPAMAdamW, raw_model.transformer.h.parameters(), lr=1e-3, betas=(0.9, 0.95), fused=True):
-                    optimizers.append(optimizer4)
-            case 'stable-spam':
-                optimizer = StableSPAM(model.parameters(), lr=nconfig.learning_rate, weight_decay=nconfig.weight_decay)
-                optimizers = [optimizer]
-            case _:
-                raise ValueError(f"Optimizer {nconfig.optim} not supported")
+        optimizers = get_optimizers(model, nconfig, raw_model)
 
         # reset the learning rate scheduler (update the step count for each scheduler to match the current training progress)
         del schedulers
-        schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
+        schedulers = get_schedulers(optimizers, nconfig)
         current_step_fraction = step / nconfig.num_iterations
         for scheduler in schedulers:
             scheduler.last_epoch = int(current_step_fraction*nconfig.num_iterations) - 1
@@ -340,6 +270,7 @@ for step in range(nconfig.num_iterations + 1):
 
 print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
 print0("Training complete.")
+dist.destroy_process_group()
 
 # ====================================== EVAL - BENCHMARKS ======================================
 if nconfig.eval_benchmarks and master_process:
@@ -381,71 +312,6 @@ if nconfig.eval_benchmarks and master_process:
 
 # ====================================== EVAL - LONG-CONTEXT PG19 ======================================
 if nconfig.evalpg19 and master_process:
-    import tiktoken
-    from datasets import load_dataset
-    from tqdm import tqdm
-    import matplotlib.pyplot as plt
-
-    # load tokenizer
-    with open(nconfig.eval_tokenizer_path, 'rb') as f:
-        enc_pickled = pickle.load(f)
-    enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
-
-    print("Evaluating on long-context PG19.")
-
-    # load PG19 dataset
-    ds = load_dataset("emozilla/pg19")
-
-    accumulated_losses = torch.zeros(nconfig.evalpg19_ctx_len, device='cuda')
-    example_count = 0
-    batch_examples = []
-
-    for example in tqdm(ds["train"], total=nconfig.evalpg19_num_samples):
-        if nconfig.evalpg19_num_samples > 0 and example_count >= nconfig.evalpg19_num_samples:
-            break
-
-        input_enc = enc.encode(example['text'])
-
-        if len(input_enc) < nconfig.evalpg19_ctx_len:
-            continue
-
-        batch_examples.append(input_enc[:nconfig.evalpg19_ctx_len+1])
-
-        if len(batch_examples) == nconfig.evalpg19_batch_size:
-            x = torch.tensor([ex[:-1] for ex in batch_examples], dtype=torch.long, device='cuda')
-            y = torch.tensor([ex[1:] for ex in batch_examples], dtype=torch.long, device='cuda')
-
-            with torch.no_grad():
-                with ctx:
-                    logits = model(x, just_logits=True)
-                B, L, vocab_size = logits.size()
-                token_losses = F.cross_entropy(logits.view(-1, vocab_size), y.view(-1), reduction='none')
-                token_losses = token_losses.view(B, L)
-            accumulated_losses += token_losses.sum(dim=0)
-            example_count += nconfig.evalpg19_batch_size
-            batch_examples = []
-
-    per_token_loss = accumulated_losses / example_count # L(i)
-    per_token_loss_cpu = per_token_loss.cpu().numpy()
-
-    # save tensor and plot to file
-    torch.save(per_token_loss, os.path.join(logdir, f'per_token_loss.pt'))
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(per_token_loss_cpu)
-    plt.title('Per-token Loss L(i) Over Position', fontsize=14)
-    plt.xlabel('Token Position i', fontsize=12)
-    plt.ylabel('Loss', fontsize=12)
-    plt.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(os.path.join(logdir, 'per_token_loss.png'), dpi=300)
-
-    # log to wandb
-    data = [[i, loss] for i, loss in enumerate(per_token_loss_cpu)]
-    table = wandb.Table(data=data, columns=["token_position", "loss"])
-    wandb.log({"eval/per_token_loss_plot": wandb.plot.line(table, "token_position", "loss", title="Loss per Token")}, step=nconfig.num_iterations)
-
+    eval_pg19(logdir, model, nconfig.evalpg19_num_samples, nconfig.evalpg19_ctx_len, log_wandb=True)
     print("Done evaluating.")
 
-dist.destroy_process_group()

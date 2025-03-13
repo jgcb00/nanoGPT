@@ -11,17 +11,19 @@ NUM_GPUS=${2:-1}
 torchrun --nproc_per_node=$NUM_GPUS main.py \
     --run_name $RUN_NAME \
     --d_model 768 \
-    --n_head 12 \
-    --n_layer 12 \
-    --optim upgraded-muon \
-    --batch_size 512 \
-    --device_batch_size 16 \
-    --learning_rate 0.01 \
+    --n_heads 12 \
+    --n_layers 12 \
+    --layer_norm_scaling \
+    --attn_type diff \
+    --optim muon \
+    --batch_size 128 \
+    --device_batch_size 8 \
+    --learning_rate 1e-3 \
     --num_iterations 1000 \
-    --warmup_iters 50 \
+    --warmup_iters 0 \
     --warmdown_iters 150 \
     --weight_decay 0 \
-    --sequence_length 1024 \
+    --sequence_length 4096 \
     --vocab_size 50304 \
     --input_bin 'data/fineweb10B/fineweb_train_*.bin' \
     --input_val_bin 'data/fineweb10B/fineweb_val_*.bin' \

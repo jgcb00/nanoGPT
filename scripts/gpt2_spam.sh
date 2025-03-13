@@ -14,8 +14,10 @@ echo "RUN_NAME: $RUN_NAME"
 torchrun --nproc_per_node=$NUM_GPUS main.py \
     --run_name $RUN_NAME \
     --d_model 768 \
-    --n_head 12 \
-    --n_layer 12 \
+    --n_heads 12 \
+    --n_layers 12 \
+    --layer_norm_scaling \
+    --use_kv_sharing \
     --optim spam \
     --batch_size 512 \
     --device_batch_size 32 \

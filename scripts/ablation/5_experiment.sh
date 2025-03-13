@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment5.err            # standard error file
-#SBATCH --output=logs/experiment5.out           # standard output file
+#SBATCH --error=logs/experiment5_bis.err            # standard error file
+#SBATCH --output=logs/experiment5_bis.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -44,7 +44,7 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp5_GPT2-L-diff_no_qk_norm-adamw \
+    --run_name exp5_GPT2-L-diff_2h_no_qk_norm_with_group_norm-adamw \
     --d_model 1280 \
     --n_heads 40 \
     --n_kv_heads 20 \

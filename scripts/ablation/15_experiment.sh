@@ -57,6 +57,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --scalable_softmax \
     --expand_factor 2 \
     --layer-norm-scaling \
+    --no-qk-norm \
     --use_swa \
     --optim spam \
     --batch_size 64 \

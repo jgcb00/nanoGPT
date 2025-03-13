@@ -44,7 +44,7 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp12_Dragon-L-diff-adamw \
+    --run_name exp12_Dragon-L-diff_no_qk_norm-adamw \
     --model dragon \
     --d_model 1280 \
     --n_heads 20 \
@@ -52,6 +52,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --n_layers 20 \
     --use_kv_sharing \
     --use_swa \
+    --no-qk-norm \
     --attn_type diff \
     --expand_factor 2 \
     --layer-norm-scaling \

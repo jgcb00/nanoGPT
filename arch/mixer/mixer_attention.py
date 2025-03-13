@@ -236,7 +236,10 @@ class MixerDiffAttention(nn.Module):
         lambda_1 = torch.exp(torch.sum(self.lambda_q1*self.lambda_k1, dim=-1).float()).type_as(y1)
         lambda_2 = torch.exp(torch.sum(self.lambda_q2*self.lambda_k2, dim=-1).float()).type_as(y2)
         lambda_full = lambda_1 - lambda_2 + self.lambda_init
-        y = (y1 - lambda_full * y2).contiguous().view(B, T, self.d_model*self.expand_factor)
+        y = (y1 - lambda_full * y2).contiguous()
+        # We found that group norm doesn't improve on long scale the results
+        # y = F.rms_norm(y, (2*self.head_dim,)) * (1 - self.lambda_init) 
+        y = y.view(B, T, self.d_model*self.expand_factor)
         return y, cache
         
     def get_kv(self):

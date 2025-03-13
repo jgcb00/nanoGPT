@@ -55,6 +55,7 @@ class NanoConfig:
     warmdown_iters : int = 150 # WSD
     weight_decay : float = 0.
     grad_norm_clip : float = 1.0
+    scheduler : str = "wsd" # linear-slow or moonlight
 
     # data
     vocab_size : int = 50304
@@ -79,7 +80,7 @@ class NanoConfig:
 
     # eval - benchmarks (at the end of training)
     eval_benchmarks: bool = True
-    eval_benchmarks_tasks: str = 'hellaswag,openbookqa,arc_easy,arc_challenge,piqa,winogrande,lambada,openbookqa'
+    eval_benchmarks_tasks: str = 'hellaswag,openbookqa,arc_easy,arc_challenge,piqa,winogrande,lambada,squadv2'
     eval_tokenizer_path: str = 'data/enc.pkl'
 
     # eval - long-context PG19

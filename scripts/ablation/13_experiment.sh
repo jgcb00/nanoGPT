@@ -54,6 +54,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --use_kv_sharing \
     --attn_type diff \
     --scalable_softmax \
+    --no-qk-norm \
     --expand_factor 2 \
     --layer-norm-scaling \
     --use_swa \

@@ -58,6 +58,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --expand_factor 2 \
     --layer-norm-scaling \
     --use_swa \
+    --no-qk-norm \
     --rope_to_nope \
     --optim adamw \
     --batch_size 64 \

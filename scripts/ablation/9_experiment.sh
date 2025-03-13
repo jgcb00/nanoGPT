@@ -45,7 +45,7 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp9_GPT2-L-full-muon_with_wd \
+    --run_name exp9_GPT2-L-full-muon_with_wd_cosine_LR \
     --d_model 1280 \
     --n_heads 20 \
     --n_kv_heads 10 \
