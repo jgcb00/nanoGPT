@@ -78,7 +78,7 @@ print0("="*100)
 print0(nconfig)
 print0("="*100)
 
-if master_process and nconfig.use_patch_level_training:
+if nconfig.use_patch_level_training:
     prev_device_batch_size = nconfig.device_batch_size
     prev_train_accumulation_steps = nconfig.batch_size // (prev_device_batch_size * ddp_world_size)
     nconfig.device_batch_size = min(nconfig.patch_size, prev_train_accumulation_steps) * prev_device_batch_size
@@ -309,5 +309,5 @@ if nconfig.eval_benchmarks and master_process:
 
 # ====================================== EVAL - LONG-CONTEXT PG19 ======================================
 if nconfig.evalpg19 and master_process:
-    eval_pg19(logdir, model, nconfig.evalpg19_num_samples, nconfig.evalpg19_ctx_len, log_wandb=True)
+    eval_pg19(logdir, model, nconfig.evalpg19_num_samples, nconfig.evalpg19_ctx_len, nconfig.evalpg19_batch_size, log_wandb=True)
     print0("Done evaluating PG19.")

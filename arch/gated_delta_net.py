@@ -9,6 +9,8 @@ from fla.modules import FusedLinearCrossEntropyLoss
 from config import NanoConfig
 from arch.mlp import MLP
 from arch.mixer.mixer_gnd import GatedDeltaNet
+
+"""not compatible for inference"""
     
 class Block(nn.Module):
     def __init__(self, config: NanoConfig, layer_depth: int = 0):
@@ -22,8 +24,9 @@ class Block(nn.Module):
         # register here to not break torch_dynamo
         self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth) if config.layer_norm_scaling else 1.0))
 
-    def forward(self, x):
-        x = x + self.mixer(F.rms_norm(x, (x.size(-1),)))
+    def forward(self, x, cache=None):
+        h, _ = self.mixer(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)), cache=cache)
+        x = x + h
         x = x + self.mlp(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)))
         return x
 
@@ -60,14 +63,10 @@ class GatedDeltaNetModel(nn.Module):
                 logits = self.lm_head(x)
                 logits = logits.float() # use tf32/fp32 for logits
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+            return loss
         else:
             # inference-time mini-optimization: only forward the lm_head on the very last position
             logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
             logits = logits.float() # use tf32/fp32 for logits
             loss = None
-
-        # there are performance reasons why not returning logits is prudent, if not needed
-        if not return_logits:
-            logits = None
-
-        return logits, loss
+            return logits

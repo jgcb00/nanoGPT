@@ -56,7 +56,7 @@ class MixerAttention(nn.Module):
         self.rope = self.swa or not config.rope_to_nope
         self.qk_norm = config.qk_norm
         self.scalable_softmax = config.scalable_softmax
-        if self.swa:
+        if config.disable_scalable_softmax_for_local and self.swa:
             self.scalable_softmax = False
         assert self.d_model % self.n_heads == 0
 

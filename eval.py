@@ -33,7 +33,7 @@ args = tyro.cli(Args)
 with open(args.run_dir / 'config.pkl', 'rb') as f:
     config: NanoConfig = pickle.load(f)
 config.rmsnorm = False
-config.disable_scalable_softmax_for_local = False # False for loading old runs, True for newer ones
+config.disable_scalable_softmax_for_local = True # False for loading old runs, True for newer ones
 
 # define and load model, tokenizer
 model = get_model(config)

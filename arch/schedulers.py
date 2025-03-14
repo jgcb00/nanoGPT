@@ -2,6 +2,7 @@ from functools import partial
 import numpy as np
 import torch
 from config import NanoConfig
+
 def get_lr_wsd(nconfig : NanoConfig, it):
     assert it <= nconfig.num_iterations
     # 1) linear warmup for warmup_iters steps
@@ -48,7 +49,6 @@ def get_linear_slow(nconfig : NanoConfig, it):
         #    return 0.2 * (warm_up_it + 1) / 50  
         decay_ratio = 0.8 * (nconfig.num_iterations - it) / (nconfig.warmdown_iters)
         return decay_ratio
-
 
 def get_schedulers(optimizers, nconfig : NanoConfig):
     match nconfig.scheduler:
