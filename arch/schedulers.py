@@ -50,7 +50,7 @@ def get_linear_slow(num_iterations, warmup_iters, warmdown_iters, it):
         decay_ratio = 0.8 * (num_iterations - it) / (warmdown_iters)
         return decay_ratio
 
-def get_schedulers(optimizers, nconfig: NanoConfig):
+def get_schedulers(optimizers, nconfig: NanoConfig, out_of_patch_level=False):
     warmup_iters = int(nconfig.warmup_iters * nconfig.num_iterations)
     warmdown_iters = int(nconfig.warmdown_iters * nconfig.num_iterations)
     total_iters = nconfig.num_iterations
@@ -58,6 +58,10 @@ def get_schedulers(optimizers, nconfig: NanoConfig):
         warmup_iters = int(warmup_iters * nconfig.patch_training_fraction)
         warmdown_iters = int(warmdown_iters * nconfig.patch_training_fraction)
         total_iters = int(total_iters * nconfig.patch_training_fraction) + 1
+    if out_of_patch_level:
+        warmup_iters = int(warmup_iters * (1 - nconfig.patch_training_fraction))
+        warmdown_iters = int(warmdown_iters * (1 - nconfig.patch_training_fraction))
+        total_iters = int(total_iters * (1 - nconfig.patch_training_fraction)) + 1
     match nconfig.scheduler:
         case 'moonlight':
             func = get_lr_moonlight
