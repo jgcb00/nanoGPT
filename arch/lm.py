@@ -86,7 +86,7 @@ class NanoLM(LM):
                 target_enc_list.append(target_enc)
 
             with ctx:
-                generated_batch = self.generate(prompts=prompts, n_tokens=n_tokens, samples=False) # list of B x (L) tensors
+                generated_batch = self.generate(prompts=prompts, n_tokens=n_tokens, sample=False) # list of B x (L) tensors
             
             for i in range(len(batch)):
                 generated = generated_batch[i].tolist()
