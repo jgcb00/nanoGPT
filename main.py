@@ -259,9 +259,6 @@ for step in range(nconfig.num_iterations + 1):
         # reset the learning rate scheduler (update the step count for each scheduler to match the current training progress)
         del schedulers
         schedulers = get_schedulers(optimizers, nconfig, out_of_patch_level=True)
-        current_step_fraction = step / nconfig.num_iterations
-        for scheduler in schedulers:
-            scheduler.last_epoch = int(current_step_fraction*nconfig.num_iterations) - 1
 
         torch.cuda.empty_cache()
 
