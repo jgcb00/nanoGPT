@@ -44,16 +44,16 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp5_GPT2-L-diff_2h_no_qk_norm_with_group_norm-adamw \
+    --run_name exp5_GPT2-L-diff_no_qk_norm-muon \
     --d_model 1280 \
-    --n_heads 40 \
-    --n_kv_heads 20 \
+    --n_heads 20 \
+    --n_kv_heads 10 \
     --n_layers 36 \
     --use_kv_sharing \
     --attn_type diff \
     --layer-norm-scaling \
     --no-qk-norm \
-    --optim adamw \
+    --optim muon \
     --batch_size 64 \
     --device_batch_size 2 \
     --learning_rate 9.7e-4 \

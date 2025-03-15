@@ -43,7 +43,7 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp10-bis_Dragon-L-GDN-adamw \
+    --run_name exp10_bis-Dragon-L-GDN-muon \
     --model dragon \
     --d_model 1280 \
     --n_heads 20 \
@@ -53,7 +53,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --use_swa \
     --expand_factor 2 \
     --lin_attn_type gdn \
-    --optim adamw \
+    --optim muon \
     --batch_size 64 \
     --device_batch_size 2 \
     --learning_rate 9.7e-4 \

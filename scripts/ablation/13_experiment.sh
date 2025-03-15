@@ -45,7 +45,7 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp13_Dragon-L-scalable_softmax-adamw \
+    --run_name exp13_Dragon-L-scalable_softmax_no_qk_norm-adamw \
     --model dragon \
     --d_model 1280 \
     --n_heads 20 \

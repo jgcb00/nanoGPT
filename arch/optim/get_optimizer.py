@@ -13,7 +13,7 @@ def get_optimizers(model, nconfig, raw_model):
         case 'muon':
             from torch.optim import AdamW
             from arch.optim.muon import Muon
-            optimizer1 = AdamW([raw_model.transformer.wte.weight], lr=nconfig.learning_rate * 10, betas=(0.9, 0.95), fused=True)
+            optimizer1 = AdamW([raw_model.transformer.wte.weight], lr=nconfig.learning_rate, betas=(0.9, 0.95), fused=True)
             optimizer2 = AdamW([raw_model.lm_head.weight], lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True)
             optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95, weight_decay=nconfig.weight_decay)
             optimizers = [optimizer1, optimizer2, optimizer3]

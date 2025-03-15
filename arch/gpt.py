@@ -135,6 +135,10 @@ class GPT(nn.Module):
                     """
 
                     # FusedLinearCrossEntropyLoss
+<<<<<<< Updated upstream
+=======
+                    
+>>>>>>> Stashed changes
                     criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
                     targets = targets.reshape(-1, self.config.patch_size)
 
@@ -142,6 +146,10 @@ class GPT(nn.Module):
                     for i in range(self.config.patch_size):
                         loss += criterion(x, targets[:, i], self.lm_head.weight)
                     loss /= self.config.patch_size
+<<<<<<< Updated upstream
+=======
+                    
+>>>>>>> Stashed changes
 
                     # FusedCrossEntropyLoss
                     """
@@ -154,7 +162,10 @@ class GPT(nn.Module):
                         loss += criterion(logits.view(-1, logits.size(-1)), targets[:, i])
                     loss /= self.config.patch_size
                     """
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
                 else:
                     logits = self.lm_head(x)
                     logits = logits.float() # use tf32/fp32 for logits

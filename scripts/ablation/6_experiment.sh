@@ -45,7 +45,7 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp6_GPT2-L-scalable_softmax-adamw \
+    --run_name exp6_GPT2-L-scalable_softmax-muon \
     --d_model 1280 \
     --n_heads 20 \
     --n_kv_heads 10 \
@@ -54,7 +54,8 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --attn_type diff \
     --scalable_softmax \
     --layer-norm-scaling \
-    --optim adamw \
+    --no-qk-norm \
+    --optim muon \
     --batch_size 64 \
     --device_batch_size 2 \
     --learning_rate 9.7e-4 \
