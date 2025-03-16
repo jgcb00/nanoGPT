@@ -64,7 +64,7 @@ def get_schedulers(optimizers, nconfig: NanoConfig, out_of_patch_level=False):
     if out_of_patch_level:
         warmdown_iters = int(warmdown_iters * (1 - nconfig.patch_training_fraction))
         total_iters = int(total_iters * (1 - nconfig.patch_training_fraction)) + 2
-        offset = int(nconfig.num_iterations * nconfig.patch_training_fraction)
+        #offset = int(nconfig.num_iterations * nconfig.patch_training_fraction)
     match nconfig.scheduler:
         case 'moonlight':
             func = get_lr_moonlight

@@ -19,6 +19,8 @@ USED FOR EVALUATING ALREADY, OLD, TRAINED MODELS
 WILL BE DELETED, AS THIS CODE IS ALSO PRESENT AFTER THE TRAINING LOOP IN THE MAIN SCRIPT
 """
 
+ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
+
 def eval_pg19(log_dir, model, nsamples, ctx_len, batch_size, log_wandb=True):
     log_dir = Path(log_dir)
     
@@ -109,8 +111,6 @@ if __name__ == "__main__":
     model = get_model(config)
     model.cuda()
     model.eval()
-
-    ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
     model_file = sorted(args.run_dir.glob("state_step*.pt"))[-1]
     assert model_file.exists(), f"Model file {model_file} does not exist."

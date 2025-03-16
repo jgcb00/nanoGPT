@@ -78,14 +78,22 @@ print0("="*100)
 print0(nconfig)
 print0("="*100)
 
+# convenience variables
+B, T = nconfig.device_batch_size, nconfig.sequence_length
+
 if nconfig.use_patch_level_training:
     prev_device_batch_size = nconfig.device_batch_size
     prev_train_accumulation_steps = nconfig.batch_size // (prev_device_batch_size * ddp_world_size)
     nconfig.device_batch_size = min(nconfig.patch_size, prev_train_accumulation_steps) * prev_device_batch_size
     print0(f"Using patch-level training. Modifying the device batch size to account for the patch size, from {prev_device_batch_size} to {nconfig.device_batch_size}.")
+    
+    """
+    prev_batch_size = nconfig.batch_size
+    nconfig.batch_size = prev_batch_size // nconfig.patch_size
+    T = nconfig.patch_size * nconfig.sequence_length
+    print0(f"Using patch-level training. Modifying the global batch size, and the DL seq length.")
+    """
 
-# convenience variables
-B, T = nconfig.device_batch_size, nconfig.sequence_length
 # calculate the number of steps to take in the val loop.
 assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
 val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
@@ -220,7 +228,7 @@ for step in range(nconfig.num_iterations + 1):
 
     #dist.all_reduce(train_loss, op=dist.ReduceOp.AVG) # all-reducing the training loss would be more correct in terms of logging, but slower
     approx_time = training_time_ms + 1000 * (time.time() - t0)
-    print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms")
+    print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} train_time:{approx_time:.0f}ms lr: {schedulers[0].get_last_lr()[0]:.4f} step_avg:{approx_time/timed_steps:.2f}ms")
     if master_process:
         wandb.log({'train_loss': train_loss.item(), 'step_avg_time': approx_time/timed_steps, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)}, 'grad_norm': grad_norm.item()}, step=step)
 
@@ -248,6 +256,24 @@ for step in range(nconfig.num_iterations + 1):
         current_pos = val_loader.current_position - val_loader.process_rank * val_loader.B * T # same on each rank
         val_loader.B = B
         val_loader.current_position = current_pos + val_loader.process_rank * val_loader.B * T
+        
+        """
+        # fallback to the original batch size and seq length
+        nconfig.batch_size = prev_batch_size
+        B, T = nconfig.device_batch_size, nconfig.sequence_length
+        assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
+        val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
+        assert nconfig.batch_size % (B * ddp_world_size) == 0
+        train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)"
+
+        # recompute current_position in the data loaders (we dont interrupt the stream of tokens this way)
+        current_pos = train_loader.current_position - train_loader.process_rank * train_loader.B * T # same on each rank
+        train_loader.T = T
+        train_loader.current_position = current_pos + train_loader.process_rank * train_loader.B * T
+        current_pos = val_loader.current_position - val_loader.process_rank * val_loader.B * T # same on each rank
+        val_loader.T = T
+        val_loader.current_position = current_pos + val_loader.process_rank * val_loader.B * T
+        """
 
         # get the next batch (erase the prev one that used the older B)
         x, y = train_loader.next_batch()
