@@ -3,8 +3,9 @@ import numpy as np
 import torch
 from config import NanoConfig
 
-def get_lr_wsd(num_iterations, warmup_iters, warmdown_iters, it):
-    assert it <= num_iterations
+def get_lr_wsd(num_iterations, warmup_iters, warmdown_iters, offset, it):
+    it = it - offset
+    assert it <= num_iterations, f"it : {it}, offset : {offset}, num_iterations : {num_iterations}"
     # 1) linear warmup for warmup_iters steps
     if it < warmup_iters:
         return (it + 1) / warmup_iters
@@ -16,7 +17,8 @@ def get_lr_wsd(num_iterations, warmup_iters, warmdown_iters, it):
         decay_ratio = (num_iterations - it) / warmdown_iters
         return decay_ratio
     
-def get_lr_moonlight(num_iterations, warmup_iters, warmdown_iters, it):
+def get_lr_moonlight(num_iterations, warmup_iters, warmdown_iters, offset, it):
+    it = it - offset
     assert it <= num_iterations
     # 1) linear warmup for warmup_iters steps
     if it < warmup_iters:
@@ -33,7 +35,8 @@ def get_lr_moonlight(num_iterations, warmup_iters, warmdown_iters, it):
         decay_ratio = 0.2 * (num_iterations - it) / (warmdown_iters - 50)
         return decay_ratio
     
-def get_linear_slow(num_iterations, warmup_iters, warmdown_iters, it):
+def get_linear_slow(num_iterations, warmup_iters, warmdown_iters, offset, it):
+    it = it - offset
     assert it <= num_iterations
     # 1) linear warmup for warmup_iters steps
     if it < warmup_iters:
@@ -54,14 +57,14 @@ def get_schedulers(optimizers, nconfig: NanoConfig, out_of_patch_level=False):
     warmup_iters = int(nconfig.warmup_iters * nconfig.num_iterations)
     warmdown_iters = int(nconfig.warmdown_iters * nconfig.num_iterations)
     total_iters = nconfig.num_iterations
+    offset = 0
     if nconfig.use_patch_level_training:
-        warmup_iters = int(warmup_iters * nconfig.patch_training_fraction)
         warmdown_iters = int(warmdown_iters * nconfig.patch_training_fraction)
-        total_iters = int(total_iters * nconfig.patch_training_fraction) + 1
+        total_iters = int(total_iters * nconfig.patch_training_fraction) + 2
     if out_of_patch_level:
-        warmup_iters = int(warmup_iters * (1 - nconfig.patch_training_fraction))
         warmdown_iters = int(warmdown_iters * (1 - nconfig.patch_training_fraction))
-        total_iters = int(total_iters * (1 - nconfig.patch_training_fraction)) + 1
+        total_iters = int(total_iters * (1 - nconfig.patch_training_fraction)) + 2
+        offset = int(nconfig.num_iterations * nconfig.patch_training_fraction)
     match nconfig.scheduler:
         case 'moonlight':
             func = get_lr_moonlight
@@ -71,5 +74,5 @@ def get_schedulers(optimizers, nconfig: NanoConfig, out_of_patch_level=False):
             func = get_linear_slow
         case _: 
             raise ValueError(f"Scheduler {nconfig.scheduler} not supported")        
-    func = partial(func, total_iters, warmup_iters, warmdown_iters)
+    func = partial(func, total_iters, warmup_iters, warmdown_iters, offset)
     return [torch.optim.lr_scheduler.LambdaLR(opt, func) for opt in optimizers]
