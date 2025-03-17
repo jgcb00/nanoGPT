@@ -7,7 +7,7 @@ def get_lr_wsd(num_iterations, warmup_iters, warmdown_iters, offset, it):
     it = it - offset
     assert it <= num_iterations, f"it : {it}, offset : {offset}, num_iterations : {num_iterations}"
     # 1) linear warmup for warmup_iters steps
-    if it < warmup_iters:
+    if warmup_iters > 0 and it < warmup_iters:
         return (it + 1) / warmup_iters
     # 2) constant lr for a while
     elif it < num_iterations - warmdown_iters:
@@ -21,7 +21,7 @@ def get_lr_moonlight(num_iterations, warmup_iters, warmdown_iters, offset, it):
     it = it - offset
     assert it <= num_iterations
     # 1) linear warmup for warmup_iters steps
-    if it < warmup_iters:
+    if warmup_iters > 0 and it < warmup_iters:
         return (it + 1) / warmup_iters
     # 2) cosine decay for a while:
     elif it < num_iterations - warmdown_iters:
@@ -39,7 +39,7 @@ def get_linear_slow(num_iterations, warmup_iters, warmdown_iters, offset, it):
     it = it - offset
     assert it <= num_iterations
     # 1) linear warmup for warmup_iters steps
-    if it < warmup_iters:
+    if warmup_iters > 0 and it < warmup_iters:
         return (it + 1) / warmup_iters
     # 2) linear decay for a while from 1 to 0.5 :
     elif it < num_iterations - warmdown_iters:

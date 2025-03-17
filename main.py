@@ -80,29 +80,33 @@ print0("="*100)
 
 # convenience variables
 B, T = nconfig.device_batch_size, nconfig.sequence_length
+B_train, T_train = B, T
 
 if nconfig.use_patch_level_training:
     prev_device_batch_size = nconfig.device_batch_size
     prev_train_accumulation_steps = nconfig.batch_size // (prev_device_batch_size * ddp_world_size)
     nconfig.device_batch_size = min(nconfig.patch_size, prev_train_accumulation_steps) * prev_device_batch_size
+    B = nconfig.device_batch_size
+    B_train = B
     print0(f"Using patch-level training. Modifying the device batch size to account for the patch size, from {prev_device_batch_size} to {nconfig.device_batch_size}.")
-    
+
     """
     prev_batch_size = nconfig.batch_size
     nconfig.batch_size = prev_batch_size // nconfig.patch_size
-    T = nconfig.patch_size * nconfig.sequence_length
-    print0(f"Using patch-level training. Modifying the global batch size, and the DL seq length.")
+    B_train = 1 # todo: compute it automatically
+    T_train = nconfig.patch_size * nconfig.sequence_length
+    print0(f"Using patch-level training. Modifying the global batch size, and the seq length.")
     """
 
 # calculate the number of steps to take in the val loop.
 assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
 val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
 # calculate the steps of gradient accumulation required to attain the desired global batch size.
-assert nconfig.batch_size % (B * ddp_world_size) == 0
-train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
+assert nconfig.batch_size % (B_train * ddp_world_size) == 0
+train_accumulation_steps = nconfig.batch_size // (B_train * ddp_world_size)
 
 # load tokens
-train_loader = DistributedDataLoader(nconfig.input_bin, B, T, ddp_rank, ddp_world_size)
+train_loader = DistributedDataLoader(nconfig.input_bin, B_train, T_train, ddp_rank, ddp_world_size)
 val_loader = DistributedDataLoader(nconfig.input_val_bin, B, T, ddp_rank, ddp_world_size)
 print0(f"Training DataLoader: total number of tokens: {train_loader.ntok_total} across {len(train_loader.files)} files")
 print0(f"Validation DataLoader: total number of tokens: {val_loader.ntok_total} across {len(val_loader.files)} files")
@@ -139,6 +143,8 @@ torch.cuda.synchronize()
 t0 = time.time()
 # begin training
 train_loader.reset()
+last_step_times = [] # track the last X step durations
+
 for step in range(nconfig.num_iterations + 1):
     last_step = (step == nconfig.num_iterations)
     # This effectively ignores timing first 10 steps, which are slower for weird reasons.
@@ -227,10 +233,14 @@ for step in range(nconfig.num_iterations + 1):
     # everything that follows now is just diagnostics, prints, logging, etc.
 
     #dist.all_reduce(train_loss, op=dist.ReduceOp.AVG) # all-reducing the training loss would be more correct in terms of logging, but slower
-    approx_time = training_time_ms + 1000 * (time.time() - t0)
-    print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} train_time:{approx_time:.0f}ms lr: {schedulers[0].get_last_lr()[0]:.4f} step_avg:{approx_time/timed_steps:.2f}ms")
+    current_step_time = 1000 * (time.time() - t0)
+    last_step_times.append(current_step_time)
+    if len(last_step_times) > 50:
+        last_step_times.pop(0)
+    avg_step_time = sum(last_step_times)/len(last_step_times)
+    print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} current_step_time:{current_step_time:.0f}ms lr: {schedulers[0].get_last_lr()[0]:.4f} step_avg:{avg_step_time:.2f}ms")
     if master_process:
-        wandb.log({'train_loss': train_loss.item(), 'step_avg_time': approx_time/timed_steps, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)}, 'grad_norm': grad_norm.item()}, step=step)
+        wandb.log({'train_loss': train_loss.item(), 'step_avg_time': avg_step_time, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)},'grad_norm': grad_norm.item()}, step=step)
 
     # monitor patch/token-level training
     if nconfig.use_patch_level_training and step > nconfig.patch_training_fraction*nconfig.num_iterations:
@@ -260,19 +270,15 @@ for step in range(nconfig.num_iterations + 1):
         """
         # fallback to the original batch size and seq length
         nconfig.batch_size = prev_batch_size
-        B, T = nconfig.device_batch_size, nconfig.sequence_length
-        assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
-        val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
-        assert nconfig.batch_size % (B * ddp_world_size) == 0
-        train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)"
+        B_train, T_train = nconfig.device_batch_size, nconfig.sequence_length
+        assert nconfig.batch_size % (B_train * ddp_world_size) == 0
+        train_accumulation_steps = nconfig.batch_size // (B_train * ddp_world_size)
 
         # recompute current_position in the data loaders (we dont interrupt the stream of tokens this way)
-        current_pos = train_loader.current_position - train_loader.process_rank * train_loader.B * T # same on each rank
-        train_loader.T = T
-        train_loader.current_position = current_pos + train_loader.process_rank * train_loader.B * T
-        current_pos = val_loader.current_position - val_loader.process_rank * val_loader.B * T # same on each rank
-        val_loader.T = T
-        val_loader.current_position = current_pos + val_loader.process_rank * val_loader.B * T
+        current_pos = train_loader.current_position - train_loader.process_rank * train_loader.B * train_loader.T # same on each rank
+        train_loader.B = B_train
+        train_loader.T = T_train
+        train_loader.current_position = current_pos + train_loader.process_rank * train_loader.B * train_loader.T
         """
 
         # get the next batch (erase the prev one that used the older B)
