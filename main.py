@@ -225,8 +225,12 @@ for step in range(nconfig.num_iterations + 1):
     last_step_times.append(current_step_time)
     if len(last_step_times) > 50:
         last_step_times.pop(0)
-    avg_step_time = sum(last_step_times)/len(last_step_times)
-    print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} current_step_time:{current_step_time:.0f}ms lr: {schedulers[0].get_last_lr()[0]:.4f} step_avg:{avg_step_time:.2f}ms")
+    if len(last_step_times) > 1:
+        diffs = [last_step_times[i+1] - last_step_times[i] for i in range(len(last_step_times)-1)]
+        avg_step_time = sum(diffs) / len(diffs)
+    else:
+        avg_step_time = 0
+    print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} lr: {schedulers[0].get_last_lr()[0]:.4f} current_step_time:{current_step_time:.0f}ms step_avg:{avg_step_time:.2f}ms")
     if master_process:
         wandb.log({'train_loss': train_loss.item(), 'step_avg_time': avg_step_time, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)},'grad_norm': grad_norm.item()}, step=step)
 
