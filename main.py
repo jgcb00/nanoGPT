@@ -78,35 +78,23 @@ print0("="*100)
 print0(nconfig)
 print0("="*100)
 
-# convenience variables
-B, T = nconfig.device_batch_size, nconfig.sequence_length
-B_train, T_train = B, T
-
 if nconfig.use_patch_level_training:
     prev_device_batch_size = nconfig.device_batch_size
     prev_train_accumulation_steps = nconfig.batch_size // (prev_device_batch_size * ddp_world_size)
     nconfig.device_batch_size = min(nconfig.patch_size, prev_train_accumulation_steps) * prev_device_batch_size
-    B = nconfig.device_batch_size
-    B_train = B
     print0(f"Using patch-level training. Modifying the device batch size to account for the patch size, from {prev_device_batch_size} to {nconfig.device_batch_size}.")
 
-    """
-    prev_batch_size = nconfig.batch_size
-    nconfig.batch_size = prev_batch_size // nconfig.patch_size
-    B_train = 1 # todo: compute it automatically
-    T_train = nconfig.patch_size * nconfig.sequence_length
-    print0(f"Using patch-level training. Modifying the global batch size, and the seq length.")
-    """
-
+# convenience variables
+B, T = nconfig.device_batch_size, nconfig.sequence_length
 # calculate the number of steps to take in the val loop.
 assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
 val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
 # calculate the steps of gradient accumulation required to attain the desired global batch size.
-assert nconfig.batch_size % (B_train * ddp_world_size) == 0
-train_accumulation_steps = nconfig.batch_size // (B_train * ddp_world_size)
+assert nconfig.batch_size % (B * ddp_world_size) == 0
+train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
 
 # load tokens
-train_loader = DistributedDataLoader(nconfig.input_bin, B_train, T_train, ddp_rank, ddp_world_size)
+train_loader = DistributedDataLoader(nconfig.input_bin, B, T, ddp_rank, ddp_world_size)
 val_loader = DistributedDataLoader(nconfig.input_val_bin, B, T, ddp_rank, ddp_world_size)
 print0(f"Training DataLoader: total number of tokens: {train_loader.ntok_total} across {len(train_loader.files)} files")
 print0(f"Validation DataLoader: total number of tokens: {val_loader.ntok_total} across {len(val_loader.files)} files")
@@ -266,20 +254,6 @@ for step in range(nconfig.num_iterations + 1):
         current_pos = val_loader.current_position - val_loader.process_rank * val_loader.B * T # same on each rank
         val_loader.B = B
         val_loader.current_position = current_pos + val_loader.process_rank * val_loader.B * T
-        
-        """
-        # fallback to the original batch size and seq length
-        nconfig.batch_size = prev_batch_size
-        B_train, T_train = nconfig.device_batch_size, nconfig.sequence_length
-        assert nconfig.batch_size % (B_train * ddp_world_size) == 0
-        train_accumulation_steps = nconfig.batch_size // (B_train * ddp_world_size)
-
-        # recompute current_position in the data loaders (we dont interrupt the stream of tokens this way)
-        current_pos = train_loader.current_position - train_loader.process_rank * train_loader.B * train_loader.T # same on each rank
-        train_loader.B = B_train
-        train_loader.T = T_train
-        train_loader.current_position = current_pos + train_loader.process_rank * train_loader.B * train_loader.T
-        """
 
         # get the next batch (erase the prev one that used the older B)
         x, y = train_loader.next_batch()
