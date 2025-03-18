@@ -97,7 +97,7 @@ class NanoConfig:
         # check for valid linear attention type
         assert self.lin_attn_type in ["mamba2", "gdn"]
         # check for valid optimizer type
-        assert self.optim in ["adamw", "spam", "muon", "stable-spam"]
+        assert self.optim in ["adamw", "spam", "muon", "stable-spam", "muon_moonlight"]
         # check for valid n_kv_heads
         if self.n_kv_heads == 0:
             self.n_kv_heads = self.n_heads

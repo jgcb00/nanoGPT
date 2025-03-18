@@ -1,6 +1,7 @@
 from arch.optim.filter_optimizer import create_filtered_optimizer, create_2D_filtered_optimizer
+from config import NanoConfig
 
-def get_optimizers(model, nconfig, raw_model):
+def get_optimizers(model, nconfig: NanoConfig, raw_model):
     match nconfig.optim:
         case 'adamw':
             from torch.optim import AdamW
@@ -19,7 +20,29 @@ def get_optimizers(model, nconfig, raw_model):
             optimizers = [optimizer1, optimizer2, optimizer3]
             if optimizer4 := create_filtered_optimizer(AdamW, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True):
                 optimizers.append(optimizer4)
-                
+        case 'muon_moonlight':
+            from arch.optim.moonlight_muon import Muon
+
+            muon_params = [
+                p
+                for name, p in model.named_parameters()
+                if p.ndim >= 2 and "wte" not in name and "lm_head" not in name
+            ]
+            adamw_params = [
+                p
+                for name, p in model.named_parameters()
+                if not (
+                    p.ndim >= 2 and "wte" not in name and "lm_head" not in name
+                )
+            ]
+
+            optimizer = Muon(
+                lr=nconfig.learning_rate,
+                wd=nconfig.weight_decay,
+                muon_params=muon_params,
+                adamw_params=adamw_params,
+            )
+            optimizers = [optimizer]
         case 'upgraded-muon':
             from arch.optim.spam import SPAMAdamW
             from arch.optim.muon import Muon

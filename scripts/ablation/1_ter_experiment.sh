@@ -40,7 +40,7 @@ DISTRIBUTED_ARGS=(
 # (kept for this run, even though we train on 20B tokens... but at the same time the model sees 10B "tokens" litterally)
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp1_GPT2-L-patch_level_0.67_20B_stepLRBS-adamw \
+    --run_name exp1_GPT2-L-patch_level_0.67_20B-adamw \
     --use_patch_level_training \
     --d_model 1280 \
     --n_heads 20 \
@@ -50,7 +50,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --batch_size 64 \
     --device_batch_size 2 \
     --learning_rate 9.7e-4 \
-    --num_iterations 32990 \
+    --num_iterations 65980 \
     --warmup_iters 0.0045 \
     --warmdown_iters 0.15 \
     --weight_decay 0.1 \

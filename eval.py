@@ -18,59 +18,66 @@ USED FOR EVALUATING ALREADY, OLD, TRAINED MODELS
 WILL BE DELETED, AS THIS CODE IS ALSO PRESENT AFTER THE TRAINING LOOP IN THE MAIN SCRIPT
 """
 
-@dataclass
-class Args:
-    run_dir: Path  # something like logs/... (the dir that contains the .pt model)
-    tasks: str  # list of tasks to evaluate on (hellaswag, winogrande, ...)
+def eval_benchmarks(log_dir, model, tokenizer_path):
+    # load tokenizer
+    with open(tokenizer_path, 'rb') as f:
+        enc_pickled = pickle.load(f)
+    enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
+    
+    # wrap model in a LM object
+    lm = NanoLM(
+        model=model, 
+        config=config, 
+        enc=enc, 
+    )
 
-    def __post_init__(self):
-        self.tasks = self.tasks.split(',')
-        assert self.run_dir.exists(), f"Run directory {self.run_dir} does not exist."
+    # evaluate
+    results = lm_eval.simple_evaluate(lm, tasks=args.tasks)
 
-args = tyro.cli(Args)
+    # export all the results to a json file (to see the completions)
+    result_file_path = log_dir / f"results_{'_'.join(args.tasks)}.json"
+    with open(result_file_path, 'w') as f:
+        json.dump(results, f, indent=4)
 
-# read config
-with open(args.run_dir / 'config.pkl', 'rb') as f:
-    config: NanoConfig = pickle.load(f)
-config.rmsnorm = False
-config.disable_scalable_softmax_for_local = True # False for loading old runs, True for newer ones
-config.use_patch_level_training = False
+    # save the scores in a separate file
+    result_file_path = log_dir / f"scores_{'_'.join(args.tasks)}.json"
+    with open(result_file_path, 'w') as f:
+        json.dump(results['results'], f, indent=4)
 
-# define and load model, tokenizer
-model = get_model(config)
-model.cuda()
+    return results
 
-model_file = sorted(args.run_dir.glob("state_step*.pt"))[-1]
-assert model_file.exists(), f"Model file {model_file} does not exist."
+if __name__ == "__main__":
+    @dataclass
+    class Args:
+        run_dir: Path # something like logs/... (the dir that contains the .pt model)
+        tasks: str # list of tasks to evaluate on (hellaswag, winogrande, ...)
 
-checkpoint = torch.load(model_file)
-state_dict = checkpoint['model']
+        def __post_init__(self):
+            self.tasks = self.tasks.split(',')
+            assert self.run_dir.exists(), f"Run directory {self.run_dir} does not exist."
 
-new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
-model.load_state_dict(new_state_dict)
+    args = tyro.cli(Args)
 
-with open('data/enc.pkl', 'rb') as f:
-    enc_pickled = pickle.load(f)
-enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
+    # read config
+    with open(args.run_dir / 'config.pkl', 'rb') as f:
+        config: NanoConfig = pickle.load(f)
+    config.rmsnorm = False
+    config.disable_scalable_softmax_for_local = True # False for loading old runs, True for newer ones
+    config.use_patch_level_training = False
 
-lm = NanoLM(
-    model=model, 
-    config=config, 
-    enc=enc, 
-)
+    # define and load model, tokenizer
+    model = get_model(config)
+    model.cuda()
 
-print(f"Evaluating on tasks: {args.tasks} with 1GPUs")
+    model_file = sorted(args.run_dir.glob("state_step*.pt"))[-1]
+    assert model_file.exists(), f"Model file {model_file} does not exist."
 
-# evaluate
-results = lm_eval.simple_evaluate(lm, tasks=args.tasks)
+    checkpoint = torch.load(model_file)
+    state_dict = checkpoint['model']
 
-# export all the results to a json file (to see the completions)
-result_file_path = args.run_dir / f"results_{'_'.join(args.tasks)}.json"
-with open(result_file_path, 'w') as f:
-    json.dump(results, f, indent=4)
+    new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+    model.load_state_dict(new_state_dict)
 
-# save the scores in a separate file
-result_file_path = args.run_dir / f"scores_{'_'.join(args.tasks)}.json"
-with open(result_file_path, 'w') as f:
-    json.dump(results['results'], f, indent=4)
-print("Done evaluating.")
+    _ = eval_benchmarks(args.run_dir, model)
+
+    print(f"Done evaluating {args.run_dir} on {args.tasks}.")

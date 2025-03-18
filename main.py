@@ -22,6 +22,7 @@ from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 from arch.optim.get_optimizer import get_optimizers
 from arch.schedulers import get_schedulers
+from eval import eval_benchmarks
 from eval_pg19 import eval_pg19
 # TODO:
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams?
@@ -129,9 +130,10 @@ training_time_ms = 0
 # start the clock
 torch.cuda.synchronize()
 t0 = time.time()
+#last_step_time = 0
+#last_step_ref = 0
 # begin training
 train_loader.reset()
-last_step_times = [] # track the last X step durations
 
 for step in range(nconfig.num_iterations + 1):
     last_step = (step == nconfig.num_iterations)
@@ -141,6 +143,8 @@ for step in range(nconfig.num_iterations + 1):
     if step == 10:
         training_time_ms = 0
         t0 = time.time()
+        #last_step_time = training_time_ms
+        #last_step_ref = step
     timed_steps = float('nan') if step <= 11 else (step - 10) + 1 # <= 11 to avoid bug in val
 
     # update the local/swa window size (start at 64, and increase by 64 gradually over swa_warmup_iters)
@@ -149,11 +153,12 @@ for step in range(nconfig.num_iterations + 1):
         for block in raw_model.transformer.h:
             block.attn.window_size = swa_window_size
 
-    # once in a while evaluate the validation dataset
+    # --------------- VALIDATION SECTION -----------------
     if (last_step or (nconfig.val_loss_every > 0 and step % nconfig.val_loss_every == 0)):
         # stop the clock
         torch.cuda.synchronize()
         training_time_ms += 1000 * (time.time() - t0)
+        avg_step_time = training_time_ms / (timed_steps-1)
         # run validation batches
         model.eval()
         val_loader.reset()
@@ -167,7 +172,7 @@ for step in range(nconfig.num_iterations + 1):
         dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
         val_loss /= val_steps
         # log val loss
-        print0(f'step:{step}/{nconfig.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{training_time_ms/(timed_steps-1):.2f}ms')
+        print0(f'step:{step}/{nconfig.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{avg_step_time:.2f}ms')
         if master_process:
             wandb.log({'val_loss': val_loss}, step=step)
         # start the clock again
@@ -192,7 +197,7 @@ for step in range(nconfig.num_iterations + 1):
     if last_step:
         break
 
-    # --------------- TRAINING SECTION BEGIN -----------------
+    # --------------- TRAINING SECTION -----------------
     model.train()
     for i in range(1, train_accumulation_steps+1):
         # forward pass
@@ -221,16 +226,9 @@ for step in range(nconfig.num_iterations + 1):
     # everything that follows now is just diagnostics, prints, logging, etc.
 
     #dist.all_reduce(train_loss, op=dist.ReduceOp.AVG) # all-reducing the training loss would be more correct in terms of logging, but slower
-    current_step_time = 1000 * (time.time() - t0)
-    last_step_times.append(current_step_time)
-    if len(last_step_times) > 50:
-        last_step_times.pop(0)
-    if len(last_step_times) > 1:
-        diffs = [last_step_times[i+1] - last_step_times[i] for i in range(len(last_step_times)-1)]
-        avg_step_time = sum(diffs) / len(diffs)
-    else:
-        avg_step_time = 0
-    print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} lr: {schedulers[0].get_last_lr()[0]:.4f} current_step_time:{current_step_time:.0f}ms step_avg:{avg_step_time:.2f}ms")
+    approx_time = training_time_ms + 1000 * (time.time() - t0)
+    avg_step_time = approx_time / timed_steps
+    print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} lr: {schedulers[0].get_last_lr()[0]:.4f} current_step_time:{approx_time:.0f}ms step_avg:{avg_step_time:.2f}ms")
     if master_process:
         wandb.log({'train_loss': train_loss.item(), 'step_avg_time': avg_step_time, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)},'grad_norm': grad_norm.item()}, step=step)
 
@@ -238,6 +236,10 @@ for step in range(nconfig.num_iterations + 1):
     if nconfig.use_patch_level_training and step > nconfig.patch_training_fraction*nconfig.num_iterations:
         print0("Switching to token-level training.")
         nconfig.use_patch_level_training = False
+
+        # stop the clock
+        torch.cuda.synchronize()
+        training_time_ms += 1000 * (time.time() - t0)
 
         # reset any stateful layers
         model.eval()
@@ -270,6 +272,14 @@ for step in range(nconfig.num_iterations + 1):
         del schedulers
         schedulers = get_schedulers(optimizers, nconfig, out_of_patch_level=True)
 
+        # we will have a new step_avg
+        #last_step_time = training_time_ms
+        #last_step_ref = step
+
+        # start the clock again
+        torch.cuda.synchronize()
+        t0 = time.time()
+
         torch.cuda.empty_cache()
 
 print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
@@ -278,43 +288,20 @@ dist.destroy_process_group()
 
 # ====================================== EVAL - BENCHMARKS ======================================
 if nconfig.eval_benchmarks and master_process:
-    import lm_eval
-    import tiktoken
-    from arch.lm import NanoLM
-    
-    # load tokenizer
-    with open(nconfig.eval_tokenizer_path, 'rb') as f:
-        enc_pickled = pickle.load(f)
-    enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
-    
-    print0(f"Evaluating on tasks: {nconfig.eval_benchmarks_tasks} with 1GPUs")
-
-    lm = NanoLM(
-        model=raw_model, 
-        config=nconfig, 
-        enc=enc, 
-    )
-
-    # evaluate
-    results = lm_eval.simple_evaluate(lm, tasks=nconfig.eval_benchmarks_tasks, limit=1.)
-
-    # save results (with the names of the tasks in the file)
-    result_file_path = os.path.join(logdir, f"results_{'_'.join(nconfig.eval_benchmarks_tasks)}.json")
-    with open(result_file_path, 'w') as f:
-        json.dump(results['results'], f)
+    print0(f"Evaluating on tasks: {nconfig.eval_benchmarks_tasks}.")
+    results = eval_benchmarks(logdir, raw_model, nconfig.eval_tokenizer_path)
+    print0("Done evaluating benchmarks.")
 
     # log to wandb
     for task, result in results['results'].items():
         task_name = result.get('alias')
         acc = result.get('acc,none')
         acc_norm = result.get('acc,norm')
-        # could cause problem with tasks that have an accuracy attribute in their results
+        # WARNING: could cause problem with tasks that have an accuracy attribute in their results
         
         wandb.log({"eval/"+task_name+"_acc": acc, "eval/"+task_name+"_acc_norm": acc_norm}, step=nconfig.num_iterations)
 
-    print0("Done evaluating benchmarks.")
-
 # ====================================== EVAL - LONG-CONTEXT PG19 ======================================
 if nconfig.evalpg19 and master_process:
-    eval_pg19(logdir, model, nconfig.evalpg19_num_samples, nconfig.evalpg19_ctx_len, nconfig.evalpg19_batch_size, log_wandb=True)
+    eval_pg19(logdir, raw_model, nconfig.evalpg19_num_samples, nconfig.evalpg19_ctx_len, nconfig.evalpg19_batch_size, log_wandb=True)
     print0("Done evaluating PG19.")

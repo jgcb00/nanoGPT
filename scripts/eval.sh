@@ -11,6 +11,6 @@ export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 #torch run here can cause issue due to the port that might be already in used by another process
 python eval.py \
     --run_dir ${1} \
-    --tasks hellaswag,swde,fda,arc_easy,arc_challenge,piqa,winogrande,lambada,openbookqa,squadv2
+    --tasks hellaswag,swde,fda
 
 #hellaswag,swde,fda,arc_easy,arc_challenge,piqa,winogrande,lambada,openbookqa,squadv2

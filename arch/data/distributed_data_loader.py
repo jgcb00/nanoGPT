@@ -63,6 +63,9 @@ class DistributedDataLoader:
         self.current_shard = (self.current_shard + 1) % len(self.files)
         self.current_position = self.process_rank * self.B * self.T
         self.tokens = _load_data_shard(self.files[self.current_shard])
+        
+        if self.process_rank == 0 and self.current_shard % 10 == 0:
+            print(f"Advancing to next data shard={self.current_shard} ({self.current_shard//10}B tokens)")
 
     def next_batch(self):
         B = self.B

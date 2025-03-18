@@ -47,7 +47,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --batch_size 96 \
     --device_batch_size 2 \
     --learning_rate 1.20e-3 \
-    --num_iterations 32990 \
+    --num_iterations 43987 \
     --warmup_iters 0.0045 \
     --warmdown_iters 0.15 \
     --weight_decay 0.1 \
@@ -59,4 +59,6 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --val_tokens 10002432 \
     --save_every 10000 \
     --patch_training_fraction 0.67 \
-    --log_wandb
+    --log_wandb \
+    --no-eval_benchmarks \
+    --no-evalpg19
