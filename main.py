@@ -130,8 +130,7 @@ training_time_ms = 0
 # start the clock
 torch.cuda.synchronize()
 t0 = time.time()
-#last_step_time = 0
-#last_step_ref = 0
+reset_step = 10 # step at which we reset the timer
 # begin training
 train_loader.reset()
 
@@ -140,12 +139,10 @@ for step in range(nconfig.num_iterations + 1):
     # This effectively ignores timing first 10 steps, which are slower for weird reasons.
     # Alternately, and slightly more correctly in terms of benchmarking, we could do 10
     # steps with dummy data first, and then re-initialize the model and reset the loader.
-    if step == 10:
+    if step == reset_step:
         training_time_ms = 0
         t0 = time.time()
-        #last_step_time = training_time_ms
-        #last_step_ref = step
-    timed_steps = float('nan') if step <= 11 else (step - 10) + 1 # <= 11 to avoid bug in val
+    timed_steps = float('nan') if step-reset_step <= 11 else (step - reset_step) + 1 # <= to avoid bug in val
 
     # update the local/swa window size (start at 64, and increase by 64 gradually over swa_warmup_iters)
     if nconfig.model in ["gpt", "dragon"] and nconfig.use_swa and nconfig.swa_warmup_iters > 0:
@@ -272,13 +269,11 @@ for step in range(nconfig.num_iterations + 1):
         del schedulers
         schedulers = get_schedulers(optimizers, nconfig, out_of_patch_level=True)
 
-        # we will have a new step_avg
-        #last_step_time = training_time_ms
-        #last_step_ref = step
-
-        # start the clock again
+        # start the clock again (we will have a new step_avg)
+        training_time_ms = 0
         torch.cuda.synchronize()
         t0 = time.time()
+        reset_step = step+1
 
         torch.cuda.empty_cache()
 

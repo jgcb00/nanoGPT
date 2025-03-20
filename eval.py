@@ -78,6 +78,6 @@ if __name__ == "__main__":
     new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
     model.load_state_dict(new_state_dict)
 
-    _ = eval_benchmarks(args.run_dir, model)
+    _ = eval_benchmarks(args.run_dir, model, 'data/enc.pkl')
 
     print(f"Done evaluating {args.run_dir} on {args.tasks}.")

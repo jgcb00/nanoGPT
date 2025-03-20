@@ -66,7 +66,7 @@ class MixerAttention(nn.Module):
             self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
         self.rotary = Rotary(self.d_head)
         if self.scalable_softmax:
-            self.softmax_scaler = nn.Parameter(torch.ones(1, 1, self.n_heads, 1))
+            self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads))
         self.last_k = None
         self.last_v = None
 
@@ -103,7 +103,7 @@ class MixerAttention(nn.Module):
         if self.scalable_softmax:
             # scalable-softmax (https://arxiv.org/abs/2501.19399): multiply q by s*log(n)
             log_pos = torch.arange(start_pos+1, start_pos+T+1, device=q.device).view(1, T, 1, 1).float().log()
-            q = (self.softmax_scaler * log_pos) * q
+            q = (self.softmax_scaler.view(1, 1, -1, 1) * log_pos) * q
 
         new_pos = start_pos + T
         if cache is not None:
@@ -171,7 +171,7 @@ class MixerDiffAttention(nn.Module):
             self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.head_dim, bias=False)
         self.rotary = Rotary(self.head_dim)
         if self.scalable_softmax:
-            self.softmax_scaler = nn.Parameter(torch.ones(1, 1, self.n_heads, 1))
+            self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads))
         self.last_k1 = None
         self.last_k2 = None
         self.last_v = None
@@ -212,7 +212,7 @@ class MixerDiffAttention(nn.Module):
         if self.scalable_softmax:
             # scalable-softmax (https://arxiv.org/abs/2501.19399): multiply q by s*log(n)
             log_pos = torch.arange(start_pos+1, start_pos+T+1, device=q.device).view(1, T, 1, 1).float().log()
-            q = (self.softmax_scaler * log_pos) * q
+            q = (self.softmax_scaler.view(1, 1, -1, 1) * log_pos) * q
             
         # split q heads into two groups
         q = q.view(B, T, 2, self.n_heads//2, self.head_dim)

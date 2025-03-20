@@ -58,8 +58,9 @@ class Block(nn.Module):
         else:
             attn_cache, lin_attn_cache = None, None
 
-        hidden = self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),))
+        hidden = self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)) # (B, L, d_model)
         
+        # y_attn and y_lin_attn are (B, L, E*d_model)
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache)
         y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache)
         y = F.rms_norm(y_attn, (hidden.size(-1) * self.expand_factor,), self.attn_norm)
@@ -176,7 +177,6 @@ class Dragon(nn.Module):
                     """
 
                     # FusedLinearCrossEntropyLoss
-                    """
                     criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
                     targets = targets.reshape(-1, self.config.patch_size)
 
@@ -184,9 +184,9 @@ class Dragon(nn.Module):
                     for i in range(self.config.patch_size):
                         loss += criterion(x, targets[:, i], self.lm_head.weight)
                     loss /= self.config.patch_size
-                    """
 
                     # FusedCrossEntropyLoss
+                    """
                     criterion = FusedCrossEntropyLoss(ignore_index=-1)
                     logits = self.lm_head(x)
                     logits = logits.float() # use tf32/fp32 for logits
@@ -194,7 +194,8 @@ class Dragon(nn.Module):
                     loss = 0
                     for i in range(self.config.patch_size):
                         loss += criterion(logits.view(-1, logits.size(-1)), targets[:, i])
-                    loss /= self.config.patch_size
+                    loss /= self.config.patch_size"
+                    """
 
                 else:
                     logits = self.lm_head(x)
