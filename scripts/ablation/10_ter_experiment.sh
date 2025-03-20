@@ -68,6 +68,6 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --val_loss_every 250 \
     --val_tokens 10002432 \
     --save_every 10000 \
-    --no-log_wandb \
+    --log_wandb \
     --no-eval_benchmarks \
     --no-evalpg19
