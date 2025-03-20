@@ -13,7 +13,7 @@ from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 
 class Block(nn.Module):
-    def __init__(self, config : NanoConfig, swa: bool = False, layer_depth: int = 0, kv_source=None):
+    def __init__(self, config: NanoConfig, swa: bool = False, layer_depth: int = 0, kv_source=None):
         """
         swa: whether to use local attention/SWA for this block, or global
         kv_source: layer to get KV from, if any
@@ -36,6 +36,7 @@ class Block(nn.Module):
             case _:
                 raise ValueError(f"Unknown linear attention type {config.lin_attn_type}")
         
+        self.config = config
         self.kv_source = kv_source
         self.out_proj = nn.Linear(config.expand_factor*config.d_model, config.d_model, bias=False)
         self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
@@ -59,18 +60,45 @@ class Block(nn.Module):
             attn_cache, lin_attn_cache = None, None
 
         hidden = self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)) # (B, L, d_model)
-        
-        # y_attn and y_lin_attn are (B, L, E*d_model)
-        y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache)
-        y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache)
-        y = F.rms_norm(y_attn, (hidden.size(-1) * self.expand_factor,), self.attn_norm)
-        if not self.is_lin_attn_norm:
-            y = y + F.rms_norm(y_lin_attn, (hidden.size(-1) * self.expand_factor,), self.lin_attn_norm)
-        else :
-            y = y + y_lin_attn
-        x = x + self.out_proj(y / 2)
-        x = x + self.mlp(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)))
-        return x if cache is None else (x, (attn_cache, lin_attn_cache))
+
+        if not self.config.use_patch_level_training:
+            # y_attn and y_lin_attn are (B, L, E*d_model)
+            y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache)
+            y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache)
+            y = F.rms_norm(y_attn, (hidden.size(-1) * self.expand_factor,), self.attn_norm)
+            if not self.is_lin_attn_norm:
+                y = y + F.rms_norm(y_lin_attn, (hidden.size(-1) * self.expand_factor,), self.lin_attn_norm)
+            else :
+                y = y + y_lin_attn
+            x = x + self.out_proj(y / 2)
+            x = x + self.mlp(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)))
+            return x if cache is None else (x, (attn_cache, lin_attn_cache))
+        else:
+            # hidden is (B, L, d_model)
+            B, L, d_model = hidden.size()
+
+            # forward linear attn, as usual
+            y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache) # (B, L, E*d_model)
+
+            # patchify hidden, forward attn, and de-duplicate the output
+            hidden = hidden.view(B, L//self.config.patch_size, self.config.patch_size, d_model).mean(dim=2) # (B, n_patches, d_model)
+            y_attn, attn_cache = self.attn(hidden, external_kv=external_kv, cache=attn_cache) # (B, n_patches, E*d_model)
+            y_attn = y_attn.repeat_interleave(self.config.patch_size, dim=1) # (B, L, E*d_model)
+
+            # combine attn and lin_attn
+            y = F.rms_norm(y_attn, (d_model * self.expand_factor,), self.attn_norm)
+            if not self.is_lin_attn_norm:
+                y = y + F.rms_norm(y_lin_attn, (d_model * self.expand_factor,), self.lin_attn_norm)
+            else:
+                y = y + y_lin_attn
+            x = x + self.out_proj(y / 2)
+
+            # patchify x, forward mlp, and de-duplicate the output
+            x = x.view(B, L//self.config.patch_size, self.config.patch_size, d_model).mean(dim=2) # (B, n_patches, d_model)
+            x = x + self.mlp(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),))) # (B, n_patches, d_model)
+            x = x.repeat_interleave(self.config.patch_size, dim=1) # (B, L, d_model)
+
+            return x if cache is None else (x, (attn_cache, lin_attn_cache))
 
     def get_empty_cache(self):
         # ((k_cache, v_cache, pos), (h_cache, conv_cache))
@@ -133,12 +161,6 @@ class Dragon(nn.Module):
         # forward the Dragon model itself
         x = self.transformer.wte(idx) # token embeddings of shape (B, L, d_model)
 
-        if self.config.use_patch_level_training:
-            x = x.view(B, L//self.config.patch_size, self.config.patch_size, -1).mean(2) # (B, num_patches, D)
-            x = x[:, :-1] # remove the last patch
-            targets = targets[:, self.config.patch_size-1:-1] # targets is already shifted by one
-            # so we remove only the first patch_size-1 tokens, as well as the last
-
         x = F.rms_norm(x, (x.size(-1),))
 
         if caches is None:
@@ -160,69 +182,19 @@ class Dragon(nn.Module):
             return logits
 
         if targets is not None: # if we are given some desired targets also calculate the loss
-            if self.config.use_patch_level_training:
-                if self.config.fused_loss_computation:
-
-                    # regular, modified
-                    """
-                    logits = self.lm_head(x)
-                    logits = logits.float() # use tf32/fp32 for logits
-
-                    targets = targets.reshape(-1, self.config.patch_size)
-
-                    loss = 0
-                    for i in range(self.config.patch_size):
-                        loss += F.cross_entropy(logits.view(-1, logits.size(-1)), targets[:, i], ignore_index=-1)
-                    loss /= self.config.patch_size"
-                    """
-
-                    # FusedLinearCrossEntropyLoss
-                    criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
-                    targets = targets.reshape(-1, self.config.patch_size)
-
-                    loss = 0
-                    for i in range(self.config.patch_size):
-                        loss += criterion(x, targets[:, i], self.lm_head.weight)
-                    loss /= self.config.patch_size
-
-                    # FusedCrossEntropyLoss
-                    """
-                    criterion = FusedCrossEntropyLoss(ignore_index=-1)
-                    logits = self.lm_head(x)
-                    logits = logits.float() # use tf32/fp32 for logits
-                    targets = targets.reshape(-1, self.config.patch_size)
-                    loss = 0
-                    for i in range(self.config.patch_size):
-                        loss += criterion(logits.view(-1, logits.size(-1)), targets[:, i])
-                    loss /= self.config.patch_size"
-                    """
-
-                else:
-                    logits = self.lm_head(x)
-                    logits = logits.float() # use tf32/fp32 for logits
-
-                    targets = targets.reshape(-1, self.config.patch_size)
-
-                    loss = 0
-                    log_probs = F.log_softmax(logits.view(-1, logits.size(-1)), dim=1)
-                    for i in range(self.config.patch_size):
-                        loss += F.nll_loss(log_probs, targets[:, i], ignore_index=-1)
-                    loss /= self.config.patch_size
-            else:
-                if self.config.fused_loss_computation:
-                    criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
-                    loss = criterion(x, targets, self.lm_head.weight)
+            if self.config.fused_loss_computation:
+                criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
+                loss = criterion(x, targets, self.lm_head.weight)
                     
-                    #criterion = FusedCrossEntropyLoss(ignore_index=-1)
-                    #logits = self.lm_head(x)
-                    #logits = logits.float() # use tf32/fp32 for logits
-                    #loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
-                else:
-                    logits = self.lm_head(x)
-                    logits = logits.float() # use tf32/fp32 for logits
-                    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+                #criterion = FusedCrossEntropyLoss(ignore_index=-1)
+                #logits = self.lm_head(x)
+                #logits = logits.float() # use tf32/fp32 for logits
+                #loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
+            else:
+                logits = self.lm_head(x)
+                logits = logits.float() # use tf32/fp32 for logits
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
             return loss
-
         elif caches is None: # inference without caching (not recommended)
             # inference-time mini-optimization: only forward the lm_head on the very last position
             logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
