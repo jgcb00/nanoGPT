@@ -45,7 +45,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --run_name exp10-Dragon-L-base-patch_level_custom_10B-adamw \
     --model dragon \
     --use_patch_level_training \
-    --patch_training_fraction 0.67 \
+    --patch_training_fraction 0.25 \
     --d_model 1280 \
     --n_heads 20 \
     --n_kv_heads 10 \
