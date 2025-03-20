@@ -26,13 +26,13 @@ def get_optimizers(model, nconfig: NanoConfig, raw_model):
             muon_params = [
                 p
                 for name, p in model.named_parameters()
-                if p.ndim >= 2 and "wte" not in name and "lm_head" not in name
+                if p.ndim == 2 and "wte" not in name and "lm_head" not in name
             ]
             adamw_params = [
                 p
                 for name, p in model.named_parameters()
                 if not (
-                    p.ndim >= 2 and "wte" not in name and "lm_head" not in name
+                    p.ndim == 2 and "wte" not in name and "lm_head" not in name
                 )
             ]
 
