@@ -31,6 +31,13 @@ class NanoConfig:
     disable_scalable_softmax_for_local: bool = True
     rope_to_nope: bool = False # whether to use the rope-to-nope arch (2501.18795, ie disable RoPE in full attn layers) (only effective if use_swa=True)
 
+    # NSA specific
+    nsa_kernel_size: int = 32
+    nsa_kernel_stride: int = 16
+    nsa_block_size: int = 64
+    nsa_topn: int = 16
+    nsa_swa: int = 512
+
     # Mamba and GatedDeltaNet related
     rmsnorm: bool = False # whether to use an output norm (before proj)
 

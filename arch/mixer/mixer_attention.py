@@ -8,6 +8,8 @@ try:
 except ImportError:
     pass
 
+from arch.native_sparse_attention.ops import compressed_attention, topk_sparse_attention, linear_compress
+
 from config import NanoConfig
 import math
 
@@ -263,6 +265,120 @@ class DiffAttention(MixerDiffAttention):
     
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x, external_kv, cache)
+        y = self.c_proj(y)
+        return y, cache
+
+# just a modification of the indices (x is now (B*T, H, D) instead of (B, T, H, D))
+class RotaryNSA(torch.nn.Module):
+    def __init__(self, dim, base=10000):
+        super().__init__()
+        self.inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
+        self.seq_len_cached = 0
+        self.cos_cached = None
+        self.sin_cached = None
+
+    def forward(self, x, start_pos=0):
+        seq_len = x.shape[0]
+        total_len = start_pos + seq_len
+        
+        if total_len > self.seq_len_cached:
+            self.seq_len_cached = max(2*total_len, 16) # each time we encounter a new seq_len, we cache the next 2*seq_len
+            t = torch.arange(self.seq_len_cached, device=x.device).type_as(self.inv_freq)
+            freqs = torch.outer(t, self.inv_freq).to(x.device)
+            self.cos_cached = freqs.cos().bfloat16()
+            self.sin_cached = freqs.sin().bfloat16()
+            
+        cos = self.cos_cached[start_pos:start_pos+seq_len]
+        sin = self.sin_cached[start_pos:start_pos+seq_len]
+        return cos[None, :, None, :], sin[None, :, None, :]
+
+def apply_rotary_emb_nsa(x, cos, sin):
+    assert x.ndim == 4 # multihead attention
+    d = x.shape[2]//2
+    x1 = x[..., :d]
+    x2 = x[..., d:]
+    y1 = x1 * cos + x2 * sin
+    y2 = x1 * (-sin) + x2 * cos
+    return torch.cat([y1, y2], 3).type_as(x)
+    
+class MixerNativeSparseAttention(nn.Module):
+    def __init__(self, config: NanoConfig):
+        self.n_heads = config.n_heads
+        self.n_kv_heads = config.n_kv_heads
+        self.n_kv_groups = self.n_heads // self.n_kv_heads
+        self.d_model = config.d_model
+        self.d_head = self.d_model // self.n_heads * config.expand_factor
+        self.expand_factor = config.expand_factor
+        self.kernel_size = config.nsa_kernel_size
+        self.kernel_stride = config.nsa_kernel_stride
+        self.block_size = config.nsa_block_size
+        self.topn = config.nsa_topn
+
+        assert self.d_model % self.n_heads == 0
+        
+        # todo: three separate sets of k,v
+        self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
+        self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
+        self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
+        self.c_g = nn.Linear(self.d_model, 3 * self.n_heads, bias=False)
+        self.wk = torch.nn.Parameter(torch.zeros(self.n_heads, self.d_head * self.kernel_size, self.d_head))
+        self.wv = torch.nn.Parameter(torch.zeros(self.n_heads, self.d_head * self.kernel_size, self.d_head))
+        self.pe = torch.nn.Parameter(torch.zeros(self.n_kv_heads, self.kernel_size, self.d_head))
+        self.rotary = Rotary(self.d_head)
+
+    def forward(self, x):
+        B, T, _ = x.size()
+
+        # here, pass into B*L mode and create cu_seqlens
+        x = x.view(B*T, -1)
+        cu_seqlens = torch.arange(0, B*T+1, T, device=x.device)
+        seqlens = cu_seqlens[1:] - cu_seqlens[:-1]
+
+        # todo: remove this cu_seqlens
+        # todo: accumulate in o rather than have o_cmp, o_scl, o_swa
+        # todo: replace this weird aggregation
+
+        # qkv proj
+        q = self.proj_q(x).view(B*T, self.n_heads, self.d_head)
+        k = self.proj_k(x).view(B*T, self.n_kv_heads, self.d_head)
+        v = self.proj_v(x).view(B*T, self.n_kv_heads, self.d_head)
+
+        # k,v compression
+        k_cmp, cu_seqlens_cmp = linear_compress(k, self.wk, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
+        v_cmp, _ = linear_compress(v, self.wv, cu_seqlens, self.kernel_size, self.kernel_stride, None)
+
+        # rope on q and k_cmp
+        cos, sin = self.rotary(q)
+        q, k_cmp = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k_cmp, cos, sin)
+
+        # compression attention
+        compressed_seqlens = cu_seqlens_cmp[1:] - cu_seqlens_cmp[:-1]
+        o_cmp, topn_idx = compressed_attention(q, k_cmp, v_cmp, self.kernel_size, self.kernel_stride, self.block_size, self.topn, cu_seqlens, cu_seqlens_cmp, seqlens.max().item(), compressed_seqlens.max().item(), None, init_blocks=1, local_blocks=2)
+
+        k = apply_rotary_emb(k, cos, sin)
+
+        # selection attention
+        o_slc = topk_sparse_attention(q, k, v, topn_idx, self.block_size, cu_seqlens, None)
+
+        # local attention
+        o_swa = flash_attn.flash_attn_varlen_func(q, k, v, cu_seqlens, cu_seqlens, seqlens.max().item(), seqlens.max().item(), causal=True, window_size=(self.window_size, -1))
+
+        # agregate
+        g = self.c_g(x).sigmoid().view(B, T, self.n_heads, 3)
+        o = (g[..., 0:1] * o_cmp + g[..., 1:2] * o_slc + g[..., 2:3] * o_swa)
+        o = o.view(B, T, self.d_model*self.expand_factor)
+        return o, None
+
+class NativeSparseAttention(MixerNativeSparseAttention):
+    def __init__(self, config: NanoConfig):
+        super().__init__(config)
+
+        # output projection
+        self.c_proj = nn.Linear(config.expand_factor * self.d_model, self.d_model, bias=False)
+        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+
+    def forward(self, x, external_kv=None, cache=None):
+        y, cache = super().forward(x)
         y = self.c_proj(y)
         return y, cache
 
