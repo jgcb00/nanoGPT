@@ -2,7 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import flash_attn
-import flex_head_fa
+
+try:
+    import flex_head_fa
+except ImportError:
+    pass
+
 from config import NanoConfig
 import math
 

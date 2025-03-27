@@ -22,8 +22,6 @@ from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 from arch.optim.get_optimizer import get_optimizers
 from arch.schedulers import get_schedulers
-from eval import eval_benchmarks
-from eval_pg19 import eval_pg19
 # TODO:
 # check correspondance with megatron : do they have extra hparams ? do we have extra hparams?
 # next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
@@ -124,7 +122,7 @@ schedulers = get_schedulers(optimizers, nconfig)
 
 # begin wandb logging
 if master_process:
-    wandb.init(project='nanoGPT', name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
+    wandb.init(project='nsa', name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
 
 training_time_ms = 0
 # start the clock
@@ -283,6 +281,8 @@ dist.destroy_process_group()
 
 # ====================================== EVAL - BENCHMARKS ======================================
 if nconfig.eval_benchmarks and master_process:
+    from eval import eval_benchmarks
+
     print0(f"Evaluating on tasks: {nconfig.eval_benchmarks_tasks}.")
     results = eval_benchmarks(logdir, raw_model, nconfig.eval_tokenizer_path)
     print0("Done evaluating benchmarks.")
@@ -298,5 +298,7 @@ if nconfig.eval_benchmarks and master_process:
 
 # ====================================== EVAL - LONG-CONTEXT PG19 ======================================
 if nconfig.evalpg19 and master_process:
+    from eval_pg19 import eval_pg19
+    
     eval_pg19(logdir, raw_model, nconfig.evalpg19_num_samples, nconfig.evalpg19_ctx_len, nconfig.evalpg19_batch_size, log_wandb=True)
     print0("Done evaluating PG19.")

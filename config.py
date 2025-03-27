@@ -15,7 +15,7 @@ class NanoConfig:
     n_heads : int = 6 # head dim 128 suggested by @Grad62304977
     n_layers : int = 12
     expand_factor : int = 1 # expand factor for Mamba/Dragon
-    attn_type : str = "normal" # normal, diff
+    attn_type : str = "normal" # normal, diff, nsa
     lin_attn_type: str = "mamba2" # mamba2, gdn
     layer_norm_scaling : bool = False # whether to scale layer norm by sqrt(layer_depth)
     fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
@@ -93,7 +93,7 @@ class NanoConfig:
         # check for valid model
         assert self.model in ["gpt", "dragon", "gated-delta-net", "mamba2"]
         # check for valid attention type
-        assert self.attn_type in ["normal", "diff"]
+        assert self.attn_type in ["normal", "diff", "nsa"]
         # check for valid linear attention type
         assert self.lin_attn_type in ["mamba2", "gdn"]
         # check for valid optimizer type
