@@ -9,11 +9,12 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp1_GPT2-S-adamw \
+    --run_name exp1_GPT2-S-nsa_sel4-adamw \
     --d_model 768 \
     --n_heads 16 \
     --n_kv_heads 1 \
     --n_layers 12 \
+    --attn_type nsa \
     --optim adamw \
     --batch_size 512 \
     --device_batch_size 16 \
@@ -29,4 +30,9 @@ torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --val_loss_every 250 \
     --val_tokens 10485760 \
     --save_every 10000 \
+    --nsa_kernel_size 32 \
+    --nsa_kernel_stride 16 \
+    --nsa_block_size 64 \
+    --nsa_topn 4 \
+    --nsa_swa 512 \
     --log_wandb
