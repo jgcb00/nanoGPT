@@ -303,8 +303,6 @@ class MixerNativeSparseAttention(nn.Module):
         cu_seqlens = torch.arange(0, B*T+1, T, dtype=torch.int32, device=x.device)
         seqlens = cu_seqlens[1:] - cu_seqlens[:-1]
 
-        # todo: three separate sets of k,v
-
         # qkv proj
         q = self.c_q(x).view(B*T, self.n_heads, self.d_head)
         k_cmp, k_slc, k_swa = self.c_k(x).view(B*T, self.n_kv_heads, self.d_head, 3).unbind(-1)
