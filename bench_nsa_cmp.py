@@ -17,13 +17,13 @@ memory_table = []
         # argument names to use as an x-axis for the plot
         x_names=['T'],
         # different possible values for `x_name`
-        x_vals=[128 * 2 ** i for i in range(6, 9)],
+        x_vals=[128 * 2 ** i for i in range(4, 9)],
         # argument name whose value corresponds to a different line in the plot
         line_arg='provider',
         # possible values for `line_arg``
-        line_vals=['nsa', 'nsa_bwd', 'flash', 'flash_bwd'],
+        line_vals=['linear_compress', 'avgpool_compress', 'weightedpool_compress'],
         # label name for the lines
-        line_names=['nsa', 'nsa_bwd', 'flash', 'flash_bwd'],
+        line_names=['linear_compress', 'avgpool_compress', 'weightedpool_compress'],
         # line styles
         styles=[('green', '-'), ('blue', '-'), ('red', '-'), ('green', 'dotted'),
                 ('blue', 'dotted'), ('red', 'dotted'), ('cyan', '-'), ('cyan', 'dotted')],
@@ -52,13 +52,9 @@ def benchmark(T, provider):
     config.nsa_kernel_stride = kernel_stride
     config.nsa_topn = topn
     config.nsa_swa = swa
+    config.nsa_cmp_type = provider
 
-    if 'nsa' in provider:
-        mixer = MixerNativeSparseAttention(config).to(device).to(dtype)
-    elif 'flash' in provider:
-        mixer = MixerAttention(config).to(device).to(dtype)
-    else:
-        raise NotImplementedError
+    mixer = MixerNativeSparseAttention(config).to(device).to(dtype)
 
     mixer = torch.compile(mixer, dynamic=False)
     for _ in range(10):
@@ -73,12 +69,8 @@ def benchmark(T, provider):
     quantiles = [0.5, 0.2, 0.8]
     results = 0, 0, 0
 
-    if not 'bwd' in provider:
-        with ctx:
-            results = triton.testing.do_bench(lambda: mixer(x), quantiles=quantiles)
-    else:
-        with ctx:
-            results = triton.testing.do_bench(lambda: mixer(x)[0].backward(do), quantiles=quantiles)
+    with ctx:
+        results = triton.testing.do_bench(lambda: mixer(x)[0].backward(do), quantiles=quantiles)
 
     memory_usage = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
     memory_table.append((T, provider, memory_usage))
@@ -99,7 +91,7 @@ if __name__ == '__main__':
 
     df = pd.DataFrame(memory_table, columns=['T', 'provider', 'peak_memory_MB'])
     df_pivot = df.pivot(index='T', columns='provider', values='peak_memory_MB').reset_index()
-    desired_order = ['T', 'nsa', 'nsa_bwd', 'flash', 'flash_bwd']
+    desired_order = ['T', 'linear_compress', 'avgpool_compress', 'weightedpool_compress']
     df_pivot = df_pivot[[col for col in desired_order if col in df_pivot.columns]]
     print("\nPerformance:")
     print(df_pivot)

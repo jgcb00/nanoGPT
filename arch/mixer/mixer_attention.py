@@ -8,7 +8,7 @@ try:
 except ImportError:
     pass
 
-from native_sparse_attention.ops import compressed_attention, topk_sparse_attention, linear_compress
+from native_sparse_attention.ops import compressed_attention, topk_sparse_attention, linear_compress, avgpool_compress, weightedpool_compress
 from native_sparse_attention.module.rope import RopeConfig, RotaryEmbedding
 
 from config import NanoConfig
@@ -287,9 +287,9 @@ class MixerNativeSparseAttention(nn.Module):
         assert self.d_model % self.n_heads == 0
         
         self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
-        self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
-        self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
-        self.c_g = nn.Linear(self.d_model, 3 * self.n_heads, bias=False)
+        self.c_k = nn.Linear(self.d_model, 3*self.n_kv_heads*self.d_head, bias=False)
+        self.c_v = nn.Linear(self.d_model, 3*self.n_kv_heads*self.d_head, bias=False)
+        self.c_g = nn.Linear(self.d_model, 3*self.n_heads, bias=False)
         self.wk = torch.nn.Parameter(torch.zeros(self.n_kv_heads, self.d_head * self.kernel_size, self.d_head))
         self.wv = torch.nn.Parameter(torch.zeros(self.n_kv_heads, self.d_head * self.kernel_size, self.d_head))
         self.pe = torch.nn.Parameter(torch.zeros(self.n_kv_heads, self.kernel_size, self.d_head))
@@ -304,40 +304,36 @@ class MixerNativeSparseAttention(nn.Module):
         seqlens = cu_seqlens[1:] - cu_seqlens[:-1]
 
         # todo: three separate sets of k,v
-        # todo: accumulate in o rather than have o_cmp, o_scl, o_swa (and replace this weird aggregation)
-        # todo: graph break de torch.compile?
-        # todo: tester sans cette histoire de reshape B*T ?
 
         # qkv proj
         q = self.c_q(x).view(B*T, self.n_heads, self.d_head)
-        k = self.c_k(x).view(B*T, self.n_kv_heads, self.d_head)
-        v = self.c_v(x).view(B*T, self.n_kv_heads, self.d_head)
+        k_cmp, k_slc, k_swa = self.c_k(x).view(B*T, self.n_kv_heads, self.d_head, 3).unbind(-1)
+        v_cmp, v_slc, v_swa = self.c_v(x).view(B*T, self.n_kv_heads, self.d_head, 3).unbind(-1)
+        g_cmp, g_slc, g_swa = self.c_g(x).sigmoid().view(B*T, self.n_heads, 3).unbind(-1)
 
         # no need to replicate k/v for GQA, this is handled in the attentions
 
-        # k,v compression
-        k_cmp, cu_seqlens_cmp = linear_compress(k, self.wk, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
-        v_cmp, _ = linear_compress(v, self.wv, cu_seqlens, self.kernel_size, self.kernel_stride, None)
+        # compression attention
+        k_cmp, cu_seqlens_cmp = linear_compress(k_cmp, self.wk, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
+        v_cmp, _ = linear_compress(v_cmp, self.wv, cu_seqlens, self.kernel_size, self.kernel_stride, None)
 
-        # rope on q and k_cmp
         q = self.rotary(q, cu_seqlens)
         k_cmp = self.rotary(k_cmp, cu_seqlens_cmp, stride=self.kernel_stride)
-
-        # compression attention
+        
         compressed_seqlens = cu_seqlens_cmp[1:] - cu_seqlens_cmp[:-1]
         o_cmp, topn_idx = compressed_attention(q, k_cmp, v_cmp, self.kernel_size, self.kernel_stride, self.block_size, self.topn, cu_seqlens, cu_seqlens_cmp, seqlens.max().item(), compressed_seqlens.max().item(), None, init_blocks=1, local_blocks=2)
-
-        k = self.rotary(k, cu_seqlens)
+        o = g_cmp[..., None] * o_cmp
 
         # selection attention
-        o_slc = topk_sparse_attention(q, k, v, topn_idx, self.block_size, cu_seqlens, None)
+        k_slc = self.rotary(k_slc, cu_seqlens)
+        o_slc = topk_sparse_attention(q, k_slc, v_slc, topn_idx, self.block_size, cu_seqlens, None)
+        o += g_slc[..., None] * o_slc
 
         # local attention
-        o_swa = flash_attn.flash_attn_varlen_func(q, k, v, cu_seqlens, cu_seqlens, seqlens.max().item(), seqlens.max().item(), causal=True, window_size=(self.window_size, -1))
+        k_swa = self.rotary(k_swa, cu_seqlens)
+        o_swa = flash_attn.flash_attn_varlen_func(q, k_swa, v_swa, cu_seqlens, cu_seqlens, seqlens.max().item(), seqlens.max().item(), causal=True, window_size=(self.window_size, -1))
+        o += g_swa[..., None] * o_swa
 
-        # agregate
-        g = self.c_g(x).sigmoid().view(B*T, self.n_heads, 3)
-        o = (g[..., 0:1] * o_cmp + g[..., 1:2] * o_slc + g[..., 2:3] * o_swa)
         o = o.view(B, T, self.d_model*self.expand_factor)
         return o, None
 
