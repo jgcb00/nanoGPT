@@ -15,7 +15,7 @@ class NanoConfig:
     n_heads : int = 6 # head dim 128 suggested by @Grad62304977
     n_layers : int = 12
     expand_factor : int = 1 # expand factor for Mamba/Dragon
-    attn_type : str = "normal" # normal, diff
+    attn_type : str = "normal" # normal, diff, nsa
     lin_attn_type: str = "mamba2" # mamba2, gdn
     layer_norm_scaling : bool = False # whether to scale layer norm by sqrt(layer_depth)
     fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
@@ -30,6 +30,13 @@ class NanoConfig:
     scalable_softmax: bool = False
     disable_scalable_softmax_for_local: bool = True
     rope_to_nope: bool = False # whether to use the rope-to-nope arch (2501.18795, ie disable RoPE in full attn layers) (only effective if use_swa=True)
+
+    # NSA specific
+    nsa_kernel_size: int = 32
+    nsa_kernel_stride: int = 16
+    nsa_block_size: int = 64
+    nsa_topn: int = 16
+    nsa_swa: int = 512
 
     # Mamba and GatedDeltaNet related
     rmsnorm: bool = False # whether to use an output norm (before proj)
@@ -93,11 +100,14 @@ class NanoConfig:
         # check for valid model
         assert self.model in ["gpt", "dragon", "gated-delta-net", "mamba2"]
         # check for valid attention type
-        assert self.attn_type in ["normal", "diff"]
+        assert self.attn_type in ["normal", "diff", "nsa"]
         # check for valid linear attention type
         assert self.lin_attn_type in ["mamba2", "gdn"]
         # check for valid optimizer type
         assert self.optim in ["adamw", "spam", "muon", "stable-spam", "muon_moonlight"]
+        # check for valid n_heads
+        assert self.d_model % self.n_heads == 0, "d_model must be divisible by n_heads"
+        self.d_head = self.d_model // self.n_heads
         # check for valid n_kv_heads
         if self.n_kv_heads == 0:
             self.n_kv_heads = self.n_heads
@@ -105,6 +115,8 @@ class NanoConfig:
         if self.attn_type == "diff":
             assert self.n_heads % 2 == 0, "n_heads must be even when using diff attention"
             assert self.n_kv_heads % 2 == 0, "n_kv_heads must be even when using diff attention"
+        elif self.attn_type == "nsa":
+            assert (self.n_heads // self.n_kv_heads) % 16==0, "With NSA, n_heads/n_kv_heads must be divisible by 16 to have decent performance."
         assert self.rmsnorm == False, "rmsnorm is not supported in inference for now"
 
         self.eval_benchmarks_tasks = self.eval_benchmarks_tasks.split(',')

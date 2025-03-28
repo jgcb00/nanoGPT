@@ -8,7 +8,7 @@ from fla.modules import FusedLinearCrossEntropyLoss, FusedCrossEntropyLoss
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer.mixer_attention import Attention, DiffAttention
+from arch.mixer.mixer_attention import Attention, DiffAttention, NativeSparseAttention
     
 class Block(nn.Module):
     def __init__(self, config: NanoConfig, swa: bool = False, layer_depth: int = 0, kv_source=None):
@@ -23,6 +23,8 @@ class Block(nn.Module):
                 self.attn = Attention(config, swa=swa, kv_share=(kv_source is not None))
             case "diff":
                 self.attn = DiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
+            case "nsa":
+                self.attn = NativeSparseAttention(config)
             case _:
                 raise ValueError(f"Unknown attention type {config.attn_type}")
         
