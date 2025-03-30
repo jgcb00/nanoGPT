@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment12.err            # standard error file
-#SBATCH --output=logs/experiment12.out           # standard output file
+#SBATCH --error=logs/experiment12_mm.err            # standard error file
+#SBATCH --output=logs/experiment12_mm.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -44,7 +44,7 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp12_Dragon-L-diff_no_qk_norm-adamw \
+    --run_name exp12_Dragon-L-diff-muon_moonlight \
     --model dragon \
     --d_model 1280 \
     --n_heads 20 \
@@ -56,18 +56,18 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --attn_type diff \
     --expand_factor 2 \
     --layer-norm-scaling \
-    --optim adamw \
+    --optim muon_moonlight \
     --batch_size 64 \
     --device_batch_size 2 \
     --learning_rate 9.7e-4 \
     --num_iterations 32990 \
-    --warmup_iters 150 \
-    --warmdown_iters 4949 \
+    --warmup_iters 0.0045 \
+    --warmdown_iters 0.15 \
     --weight_decay 0.1 \
     --sequence_length 4736 \
     --vocab_size 50304 \
-    --input_bin 'data/fineweb10B/fineweb_train_*.bin' \
-    --input_val_bin 'data/fineweb10B/fineweb_val_*.bin' \
+    --input_bin '../nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
+    --input_val_bin '../nanoGPT/data/fineweb100B/fineweb_val_*.bin' \
     --val_loss_every 250 \
     --val_tokens 10002432 \
     --save_every 10000 \

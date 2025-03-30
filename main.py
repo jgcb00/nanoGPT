@@ -122,7 +122,7 @@ schedulers = get_schedulers(optimizers, nconfig)
 
 # begin wandb logging
 if master_process:
-    wandb.init(project='nsa', name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
+    wandb.init(project='nanoGPT', name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
 
 training_time_ms = 0
 # start the clock
