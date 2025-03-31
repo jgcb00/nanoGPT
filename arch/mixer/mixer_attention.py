@@ -54,6 +54,8 @@ def apply_rotary_emb(x, cos, sin):
 class MixerAttention(nn.Module):
     def __init__(self, config: NanoConfig, swa: bool = False, kv_share: bool = False):
         super().__init__()
+
+        self.config = config
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
         self.n_kv_groups = self.n_heads // self.n_kv_heads

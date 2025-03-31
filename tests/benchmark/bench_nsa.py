@@ -17,7 +17,7 @@ memory_table = []
         # argument names to use as an x-axis for the plot
         x_names=['T'],
         # different possible values for `x_name`
-        x_vals=[128 * 2 ** i for i in range(6, 9)],
+        x_vals=[128 * 2 ** i for i in range(5, 9)],
         # argument name whose value corresponds to a different line in the plot
         line_arg='provider',
         # possible values for `line_arg``
@@ -40,7 +40,7 @@ def benchmark(T, provider):
     device = "cuda"
     dtype = torch.bfloat16
     requires_grad = True
-    B, HQ, H, D = 4, 32, 2, 64
+    B, HQ, H, D = 4, 16, 1, 80
     kernel_size, kernel_stride, block_size, topn, swa = 32, 16, 64, 16, 512
 
     config = NanoConfig()
