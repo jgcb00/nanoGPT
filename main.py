@@ -144,7 +144,7 @@ for step in range(nconfig.num_iterations + 1):
     timed_steps = float('nan') if step-reset_step <= 11 else (step - reset_step) + 1 # <= to avoid bug in val
 
     # update the window size, following SkyLadder (https://arxiv.org/abs/2503.15450)
-    if nconfig.model in ["gpt", "dragon"] and nconfig.use_swa and nconfig.slw_warmup_iters > 0:
+    if nconfig.model in ["gpt", "dragon"] and nconfig.slw_warmup_iters > 0:
         slw_warmup_iters = int(nconfig.slw_warmup_iters * nconfig.num_iterations)
 
         progress_ratio = step / slw_warmup_iters
