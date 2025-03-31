@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment11_mm.err            # standard error file
-#SBATCH --output=logs/experiment11_mm.out           # standard output file
+#SBATCH --error=logs/experiment11_mm_TEST.err            # standard error file
+#SBATCH --output=logs/experiment11_mm_TEST.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -44,7 +44,7 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp11_Dragon-L-layer_norm_scaling-muon_moonlight \
+    --run_name exp11_Dragon-L-test_no_layer_norm_scaling-muon_moonlight \
     --model dragon \
     --d_model 1280 \
     --n_heads 20 \
@@ -53,7 +53,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --use_kv_sharing \
     --use_swa \
     --expand_factor 2 \
-    --layer-norm-scaling \
+    --no-layer-norm-scaling \
     --optim muon_moonlight \
     --batch_size 64 \
     --device_batch_size 2 \

@@ -12,6 +12,7 @@ import json
 import pickle
 import wandb
 
+import math
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -142,11 +143,15 @@ for step in range(nconfig.num_iterations + 1):
         t0 = time.time()
     timed_steps = float('nan') if step-reset_step <= 11 else (step - reset_step) + 1 # <= to avoid bug in val
 
-    # update the local/swa window size (start at 64, and increase by 64 gradually over swa_warmup_iters)
-    if nconfig.model in ["gpt", "dragon"] and nconfig.use_swa and nconfig.swa_warmup_iters > 0:
-        swa_window_size = int(min(64*((step/nconfig.swa_warmup_iters * (nconfig.swa_window_size - 64) + 64)//64), nconfig.swa_window_size))
-        for block in raw_model.transformer.h:
-            block.attn.window_size = swa_window_size
+    # update the window size, following SkyLadder (https://arxiv.org/abs/2503.15450)
+    if nconfig.model in ["gpt", "dragon"] and nconfig.use_swa and nconfig.slw_warmup_iters > 0:
+        slw_warmup_iters = int(nconfig.slw_warmup_iters * nconfig.num_iterations)
+
+        progress_ratio = step / slw_warmup_iters
+        window = nconfig.slw_start + progress_ratio * (nconfig.sequence_length - nconfig.slw_start)
+        window = nconfig.slw_increment * math.ceil(window / nconfig.slw_increment) # quantize
+        window = int(min(window, nconfig.sequence_length)) # cap
+        nconfig.slw_window = window
 
     # --------------- VALIDATION SECTION -----------------
     if (last_step or (nconfig.val_loss_every > 0 and step % nconfig.val_loss_every == 0)):

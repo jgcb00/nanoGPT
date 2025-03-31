@@ -25,7 +25,9 @@ class NanoConfig:
     use_kv_sharing : bool = False # cross-layer KV sharing
     use_swa : bool = False # mix global and local attention (first, middle and last block) or use full global
     swa_window_size : int = 1024 # local attention window size
-    swa_warmup_iters: int = 0 # on how many iteratons to warmup the local attention window size (0=no warmup)
+    slw_warmup_iters: int = 0 # on how many iteratons (%) to warmup the attention window size (0=no warmup)
+    slw_start: int = 32 # window size at the start of training
+    slw_increment: int = 64 # window size increment at each step
     qk_norm: bool = True
     scalable_softmax: bool = False
     disable_scalable_softmax_for_local: bool = True
@@ -79,6 +81,9 @@ class NanoConfig:
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     log_wandb : bool = False # whether to log to wandb
 
+    # used during training
+    slw_window: int = 0
+
     # for logging
     num_params: int = 0
 
@@ -118,5 +123,7 @@ class NanoConfig:
         elif self.attn_type == "nsa":
             assert (self.n_heads // self.n_kv_heads) % 16==0, "With NSA, n_heads/n_kv_heads must be divisible by 16 to have decent performance."
         assert self.rmsnorm == False, "rmsnorm is not supported in inference for now"
+
+        assert not(self.slw_warmup_iters > 0 and self.attn_type == "nsa"), "SLW is not supported with NSA attention"
 
         self.eval_benchmarks_tasks = self.eval_benchmarks_tasks.split(',')
