@@ -228,9 +228,9 @@ for step in range(nconfig.num_iterations + 1):
     #dist.all_reduce(train_loss, op=dist.ReduceOp.AVG) # all-reducing the training loss would be more correct in terms of logging, but slower
     approx_time = training_time_ms + 1000 * (time.time() - t0)
     avg_step_time = approx_time / timed_steps
-    print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} lr: {schedulers[0].get_last_lr()[0]:.4f} current_step_time:{approx_time:.0f}ms step_avg:{avg_step_time:.2f}ms")
+    print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} lr: {schedulers[0].get_last_lr()[0]:.4f} slw_window: {nconfig.slw_window} current_step_time:{approx_time:.0f}ms step_avg:{avg_step_time:.2f}ms")
     if master_process:
-        wandb.log({'train_loss': train_loss.item(), 'step_avg_time': avg_step_time, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)},'grad_norm': grad_norm.item()}, step=step)
+        wandb.log({'train_loss': train_loss.item(), 'step_avg_time': avg_step_time, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)}, 'slw_window': nconfig.slw_window, 'grad_norm': grad_norm.item()}, step=step)
 
     # monitor patch/token-level training
     if nconfig.use_patch_level_training and step > nconfig.patch_training_fraction*nconfig.num_iterations:

@@ -58,7 +58,7 @@ class MixerAttention(nn.Module):
         self.config = config
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
-        self.n_kv_groups = self.n_heads // self.n_kv_heads
+        self.n_kv_repeats = self.n_heads // self.n_kv_heads
         self.d_model = config.d_model
         self.d_head = self.d_model // self.n_heads * config.expand_factor
         self.expand_factor = config.expand_factor
@@ -124,16 +124,17 @@ class MixerAttention(nn.Module):
             
             cache = (k, v, new_pos)
         
-        k, v = repeat_kv(k, self.n_kv_groups), repeat_kv(v, self.n_kv_groups) # GQA (todo: can be handled by FA)
+        k, v = repeat_kv(k, self.n_kv_repeats), repeat_kv(v, self.n_kv_repeats) # GQA (todo: can be handled by FA)
 
+        wsize = self.swa_window_size if self.swa else -1
         if self.config.slw_window > 0:
             if self.swa:
                 wsize = min(self.config.slw_window, self.swa_window_size)
             else:
                 if self.config.slw_window < self.config.sequence_length:
-                    wsize = (self.config.slw_window, self.config.slw_window)
+                    wsize = self.config.slw_window
                 else:
-                    wsize = (-1, -1)
+                    wsize = -1
         
         y = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
         y = y.contiguous().view(B, T, self.d_model*self.expand_factor)
@@ -166,7 +167,7 @@ class MixerDiffAttention(nn.Module):
         self.config = config
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
-        self.n_kv_groups = self.n_heads // self.n_kv_heads
+        self.n_kv_repeats = self.n_heads // self.n_kv_heads
         self.d_model = config.d_model
         self.head_dim = self.d_model // self.n_heads * config.expand_factor
         self.expand_factor = config.expand_factor
@@ -248,16 +249,17 @@ class MixerDiffAttention(nn.Module):
             
             cache = (k1, k2, v, new_pos)
         
-        k1, k2, v = repeat_kv(k1, self.n_kv_groups), repeat_kv(k2, self.n_kv_groups), repeat_kv(v, self.n_kv_groups) # GQA
+        k1, k2, v = repeat_kv(k1, self.n_kv_repeats), repeat_kv(k2, self.n_kv_repeats), repeat_kv(v, self.n_kv_repeats) # GQA
 
+        wsize = self.swa_window_size if self.swa else -1
         if self.config.slw_window > 0:
             if self.swa:
                 wsize = min(self.config.slw_window, self.swa_window_size)
             else:
                 if self.config.slw_window < self.config.sequence_length:
-                    wsize = (self.config.slw_window, self.config.slw_window)
+                    wsize = self.config.slw_window
                 else:
-                    wsize = (-1, -1)
+                    wsize = -1
 
         y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
         y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
@@ -294,7 +296,6 @@ class MixerNativeSparseAttention(nn.Module):
         super().__init__()
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
-        self.n_kv_groups = self.n_heads // self.n_kv_heads
         self.d_model = config.d_model
         self.d_head = self.d_model // self.n_heads * config.expand_factor
         self.expand_factor = config.expand_factor

@@ -7,7 +7,7 @@ import torch
 import triton
 
 from config import NanoConfig
-from arch.mixer.mixer_attention import MixerAttention, MixerNativeSparseAttention
+from arch.gpt import Block
 
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 memory_table = []
@@ -40,7 +40,7 @@ def benchmark(T, provider):
     device = "cuda"
     dtype = torch.bfloat16
     requires_grad = True
-    B, HQ, H, D = 2, 64, 4, 40
+    B, HQ, H, D = 2, 16, 1, 80
     kernel_size, kernel_stride, block_size, topn, swa = 32, 16, 64, 16, 512
 
     config = NanoConfig()
@@ -53,18 +53,15 @@ def benchmark(T, provider):
     config.nsa_topn = topn
     config.nsa_swa = swa
 
-    if 'nsa' in provider:
-        mixer = MixerNativeSparseAttention(config).to(device).to(dtype)
-    elif 'flash' in provider:
-        mixer = MixerAttention(config).to(device).to(dtype)
-    else:
-        raise NotImplementedError
+    if "nsa" in provider:
+        config.attn_type = "nsa"
 
+    mixer = Block(config).to(device).to(dtype)
     mixer = torch.compile(mixer, dynamic=False)
     for _ in range(10):
         x = torch.randn(B, T, HQ*D, requires_grad=requires_grad, dtype=dtype, device=device)
         do = torch.ones_like(x, dtype=dtype)
-        mixer(x)[0].backward(do)
+        mixer(x).backward(do)
 
     torch.cuda.reset_peak_memory_stats()
     x = torch.randn(B, T, HQ*D, requires_grad=requires_grad, dtype=dtype, device=device)
@@ -78,7 +75,7 @@ def benchmark(T, provider):
             results = triton.testing.do_bench(lambda: mixer(x), quantiles=quantiles)
     else:
         with ctx:
-            results = triton.testing.do_bench(lambda: mixer(x)[0].backward(do), quantiles=quantiles)
+            results = triton.testing.do_bench(lambda: mixer(x).backward(do), quantiles=quantiles)
 
     memory_usage = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
     memory_table.append((T, provider, memory_usage))

@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment1_nsa_topn74.err            # standard error file
-#SBATCH --output=logs/experiment1_nsa_topn74.out           # standard output file
+#SBATCH --error=logs/experiment1_nsa_32tetes.err            # standard error file
+#SBATCH --output=logs/experiment1_nsa_32tetes.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -38,12 +38,12 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp1_GPT2-L-nsa_topn74-adamw \
+    --run_name exp1_GPT2-L-nsa_32_heads-adamw \
     --attn_type nsa \
-    --nsa_topn 74 \
+    --nsa_topn 32 \
     --d_model 1280 \
-    --n_heads 16 \
-    --n_kv_heads 1 \
+    --n_heads 32 \
+    --n_kv_heads 2 \
     --n_layers 36 \
     --optim adamw \
     --batch_size 64 \

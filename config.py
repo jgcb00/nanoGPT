@@ -26,7 +26,7 @@ class NanoConfig:
     use_swa : bool = False # mix global and local attention (first, middle and last block) or use full global
     swa_window_size : int = 1024 # local attention window size
     slw_warmup_iters: float = 0 # on how many iteratons (%) to warmup the attention window size (0=no warmup)
-    slw_start: int = 32 # window size at the start of training
+    slw_start: int = 8 # window size at the start of training
     slw_increment: int = 64 # window size increment at each step
     qk_norm: bool = True
     scalable_softmax: bool = False

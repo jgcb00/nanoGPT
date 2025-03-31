@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment1_ter.err            # standard error file
-#SBATCH --output=logs/experiment1_ter.out           # standard output file
+#SBATCH --error=logs/experiment1_ter_0.4bis.err            # standard error file
+#SBATCH --output=logs/experiment1_ter_0.4bis.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -40,8 +40,8 @@ DISTRIBUTED_ARGS=(
 # (kept for this run, even though we train on 20B tokens... but at the same time the model sees 10B "tokens" litterally)
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp1_GPT2-L-skyladder_0.6-adamw \
-    --slw_warmup_iters 0.60 \
+    --run_name exp1_GPT2-L-skyladder_0.4-adamw \
+    --slw_warmup_iters 0.40 \
     --d_model 1280 \
     --n_heads 20 \
     --n_kv_heads 20 \
@@ -61,6 +61,6 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --val_loss_every 250 \
     --val_tokens 10002432 \
     --save_every 10000 \
-    --log_wandb \
+    --no-log_wandb \
     --no-eval_benchmarks \
     --no-evalpg19
