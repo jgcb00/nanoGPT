@@ -42,21 +42,24 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp10_Dragon-L-base-muon \
+    --run_name exp10_Dragon-L-base_custom_patch-adamw \
+    --use_patch_level_training \
+    --patch_training_fraction 0.25 \
     --model dragon \
     --d_model 1280 \
     --n_heads 20 \
     --n_kv_heads 10 \
     --n_layers 20 \
     --use_kv_sharing \
+    --use_swa \
     --expand_factor 2 \
-    --optim muon \
+    --optim adamw \
     --batch_size 64 \
     --device_batch_size 2 \
     --learning_rate 9.7e-4 \
     --num_iterations 32990 \
-    --warmup_iters 150 \
-    --warmdown_iters 4949 \
+    --warmup_iters 0.0045 \
+    --warmdown_iters 0.15 \
     --weight_decay 0.1 \
     --sequence_length 4736 \
     --vocab_size 50304 \

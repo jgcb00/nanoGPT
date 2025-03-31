@@ -94,10 +94,10 @@ class Block(nn.Module):
             x = x + self.out_proj(y / 2)
 
             # patchify x, forward mlp, and de-duplicate the output
-            x = x.view(B, L//self.config.patch_size, self.config.patch_size, d_model).mean(dim=2) # (B, n_patches, d_model)
-            x = x + self.mlp(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),))) # (B, n_patches, d_model)
-            x = x.repeat_interleave(self.config.patch_size, dim=1) # (B, L, d_model)
-
+            x_patch = x.view(B, L//self.config.patch_size, self.config.patch_size, d_model).mean(dim=2) # (B, n_patches, d_model)
+            x_patch = self.mlp(self.layer_norm_scaling * F.rms_norm(x_patch, (x_patch.size(-1),))) # (B, n_patches, d_model)
+            x = x + x_patch.repeat_interleave(self.config.patch_size, dim=1) # (B, L, d_model)
+            
             return x if cache is None else (x, (attn_cache, lin_attn_cache))
 
     def get_empty_cache(self):
