@@ -5,10 +5,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from fla.modules import FusedLinearCrossEntropyLoss, FusedCrossEntropyLoss
+from cut_cross_entropy import linear_cross_entropy
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention
+from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention, MixerNativeSparseAttention
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 
@@ -25,6 +26,8 @@ class Block(nn.Module):
                 self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
             case "diff":
                 self.attn = MixerDiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
+            case "nsa":
+                self.attn = MixerNativeSparseAttention(config, swa=swa)
             case _:
                 raise ValueError(f"Unknown attention type {config.attn_type}")
 
@@ -32,19 +35,21 @@ class Block(nn.Module):
             case "mamba2":
                 self.lin_attn = MixerMamba2(config=config)
             case "gdn":
-                self.lin_attn = MixerGatedDeltaNet(config=config)
+                self.lin_attn = MixerGatedDeltaNet(config=config, expand_factor=self.attn.expand_factor)
             case _:
                 raise ValueError(f"Unknown linear attention type {config.lin_attn_type}")
-        
+            
+        self.expand_factor = self.attn.expand_factor
+
         self.kv_source = kv_source
-        self.out_proj = nn.Linear(config.expand_factor*config.d_model, config.d_model, bias=False)
+        self.out_proj = nn.Linear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
         self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
-        self.attn_norm = torch.nn.Parameter(torch.ones(config.expand_factor*config.d_model))
+        self.attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
         self.is_lin_attn_norm = config.rmsnorm
         if not config.rmsnorm:
-            self.lin_attn_norm = torch.nn.Parameter(torch.ones(config.expand_factor*config.d_model))
+            self.lin_attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
         self.mlp = MLP(config)
-        self.expand_factor = config.expand_factor
+        
         # register here to not break torch_dynamo
         self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth) if config.layer_norm_scaling else 1.0))
 
@@ -63,9 +68,9 @@ class Block(nn.Module):
         # y_attn and y_lin_attn are (B, L, E*d_model)
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache)
         y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache)
-        y = F.rms_norm(y_attn, (hidden.size(-1) * self.expand_factor,), self.attn_norm)
+        y = F.rms_norm(y_attn, (int((hidden.size(-1)*self.expand_factor)),), self.attn_norm)
         if not self.is_lin_attn_norm:
-            y = y + F.rms_norm(y_lin_attn, (hidden.size(-1) * self.expand_factor,), self.lin_attn_norm)
+            y = y + F.rms_norm(y_lin_attn, (int(hidden.size(-1)*self.expand_factor),), self.lin_attn_norm)
         else :
             y = y + y_lin_attn
         x = x + self.out_proj(y / 2)
@@ -127,7 +132,7 @@ class Dragon(nn.Module):
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
         #self.lm_head.weight.data.zero_()
 
-    def forward(self, idx, targets=None, caches=None, just_logits=False):
+    def forward(self, idx, targets=None, scores=None, caches=None, just_logits=False):
         B, L = idx.size()
 
         # forward the Dragon model itself
@@ -158,6 +163,14 @@ class Dragon(nn.Module):
         if just_logits:
             logits = self.lm_head(x)
             return logits
+        
+        if scores is not None:
+            # scores is (B, L)
+
+            loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)
+            print(loss.shape)
+            print(scores.shape)
+            print("YaaaaaaY")
 
         if targets is not None: # if we are given some desired targets also calculate the loss
             if self.config.use_patch_level_training:

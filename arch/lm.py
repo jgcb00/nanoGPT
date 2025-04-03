@@ -111,6 +111,7 @@ class NanoLM(LM):
         self.batch_size = 16 # this function supports arbitrary batch sizes, 16 is a good compromise
         
         outputs = []
+        
         for i in tqdm.tqdm(range(0, len(requests), self.batch_size)):
             batch = requests[i:i+self.batch_size]
 
@@ -214,6 +215,13 @@ class NanoLM(LM):
     @torch.no_grad()
     def generate(self, prompts, n_tokens: List[int], sample: bool = True, top_k: int = None, temperature: float = 1.0):
         # prompts : list of B x (L) tensors
+
+        if self.config.attn_type == "nsa":
+            outputs = []
+            for prompt, nt in zip(prompts, n_tokens):
+                generated = self.generate_naive(prompt.unsqueeze(0), nt, sample=sample, top_k=top_k, temperature=temperature)
+                outputs.append(generated[0])
+            return outputs
 
         B = len(prompts)
         min_len = min(prompt.size(0) for prompt in prompts)

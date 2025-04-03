@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --nodes=4           # number of nodes
+#SBATCH --nodes=1           # number of nodes
 #SBATCH --ntasks-per-node=1 # number of tasks per node
-#SBATCH --cpus-per-task=32
-#SBATCH --gres=gpu:4         # number of gpus per node
+#SBATCH --cpus-per-task=8
+#SBATCH --gres=gpu:1         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment10_ter_0.6.err            # standard error file
-#SBATCH --output=logs/experiment10_ter_0.6.out           # standard output file
+#SBATCH --error=logs/experiment0_scorer_s.err            # standard error file
+#SBATCH --output=logs/experiment0_scorer_s.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -15,7 +15,7 @@ source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/a
 
 export WANDB_MODE=offline
 
-GPUS_PER_NODE=4
+GPUS_PER_NODE=1
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 MASTER_PORT=48994
 NUM_NODES=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l)
@@ -32,31 +32,24 @@ DISTRIBUTED_ARGS=(
     --rdzv_backend c10d
 )
 
-# Dragon with :
-# SWA
-# +GQA
-# +cross-layer KV sharing
-
-
-# For 10B tokens model
-# BS = 297459
+# this turns out at 40M params
+# according to step-law.github.io/, optimal LR and BS are 0.007991 and 297,459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp10-Dragon-L-skyladder_0.6-adamw \
-    --slw_warmup_iters 0.60 \
-    --model dragon \
-    --d_model 1280 \
-    --n_heads 20 \
-    --n_kv_heads 10 \
-    --n_layers 20 \
-    --use_kv_sharing \
+    --run_name exp0_GPT2-s-scorer \
+    --is_scorer \
     --use_swa \
-    --expand_factor 2 \
+    --swa_window_size 128 \
+    --d_model 384 \
+    --n_heads 8 \
+    --n_kv_heads 8 \
+    --n_layers 16 \
+    --layer-norm-scaling \
     --optim adamw \
-    --batch_size 64 \
-    --device_batch_size 2 \
-    --learning_rate 9.7e-4 \
-    --num_iterations 32990 \
+    --batch_size 2304 \
+    --device_batch_size 32 \
+    --learning_rate 7.99e-3 \
+    --num_iterations 33990 \
     --warmup_iters 0.0045 \
     --warmdown_iters 0.15 \
     --weight_decay 0.1 \
@@ -65,8 +58,8 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --input_bin '../nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
     --input_val_bin '../nanoGPT/data/fineweb100B/fineweb_val_*.bin' \
     --val_loss_every 250 \
-    --val_tokens 10002432 \
+    --val_tokens 606208 \
     --save_every 10000 \
-    --log_wandb \
+    --no-log_wandb \
     --no-eval_benchmarks \
     --no-evalpg19

@@ -18,7 +18,7 @@ USED FOR EVALUATING ALREADY, OLD, TRAINED MODELS
 WILL BE DELETED, AS THIS CODE IS ALSO PRESENT AFTER THE TRAINING LOOP IN THE MAIN SCRIPT
 """
 
-def eval_benchmarks(log_dir, model, tokenizer_path):
+def eval_benchmarks(log_dir, model, tokenizer_path, limit=None):
     # load tokenizer
     with open(tokenizer_path, 'rb') as f:
         enc_pickled = pickle.load(f)
@@ -32,15 +32,19 @@ def eval_benchmarks(log_dir, model, tokenizer_path):
     )
 
     # evaluate
-    results = lm_eval.simple_evaluate(lm, tasks=args.tasks)
+    results = lm_eval.simple_evaluate(lm, tasks=args.tasks, limit=limit)
 
     # export all the results to a json file (to see the completions)
     result_file_path = log_dir / f"results_{'_'.join(args.tasks)}.json"
     with open(result_file_path, 'w') as f:
         json.dump(results, f, indent=4)
 
-    # save the scores in a separate file
-    result_file_path = log_dir / f"scores_{'_'.join(args.tasks)}.json"
+    # save the scores in a separate file, also tell in the file if limit is not None
+    result_file_path = log_dir / f"scores_{'_'.join(args.tasks)}"
+    if limit is not None:
+        result_file_path = result_file_path.with_suffix(f"_{limit}.json")
+    else:
+        result_file_path = result_file_path.with_suffix('.json')
     with open(result_file_path, 'w') as f:
         json.dump(results['results'], f, indent=4)
 
@@ -67,10 +71,12 @@ if __name__ == "__main__":
 
     # define and load model, tokenizer
     model = get_model(config)
+    model.to(torch.bfloat16)
     model.cuda()
 
     model_file = sorted(args.run_dir.glob("state_step*.pt"))[-1]
     assert model_file.exists(), f"Model file {model_file} does not exist."
+    print(f"Loading model from {model_file}.")
 
     checkpoint = torch.load(model_file)
     state_dict = checkpoint['model']

@@ -60,8 +60,10 @@ class MixerAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.n_kv_repeats = self.n_heads // self.n_kv_heads
         self.d_model = config.d_model
-        self.d_head = self.d_model // self.n_heads * config.expand_factor
+        #self.expand_factor = config.expand_factor//2 if swa else config.expand_factor
+        #assert self.expand_factor==2, "should be 2 here"
         self.expand_factor = config.expand_factor
+        self.d_head = (self.d_model*self.expand_factor) // self.n_heads
         self.swa, self.swa_window_size = swa, config.swa_window_size
         self.rope = self.swa or not config.rope_to_nope
         self.qk_norm = config.qk_norm
@@ -152,7 +154,7 @@ class Attention(MixerAttention):
         super().__init__(config, swa=swa, kv_share=kv_share)
         
         # output projection
-        self.c_proj = nn.Linear(config.expand_factor * self.d_model, self.d_model, bias=False)
+        self.c_proj = nn.Linear(self.expand_factor * self.d_model, self.d_model, bias=False)
         self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
     
     def forward(self, x, external_kv=None, cache=None):
@@ -169,8 +171,10 @@ class MixerDiffAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.n_kv_repeats = self.n_heads // self.n_kv_heads
         self.d_model = config.d_model
-        self.head_dim = self.d_model // self.n_heads * config.expand_factor
+        #self.expand_factor = config.expand_factor//2 if swa else config.expand_factor
+        #assert self.expand_factor==2, "should be 2 here"
         self.expand_factor = config.expand_factor
+        self.head_dim = (self.d_model * self.expand_factor) // self.n_heads
         self.swa, self.swa_window_size = swa, config.swa_window_size
         self.rope = self.swa or not config.rope_to_nope
         self.qk_norm = config.qk_norm
@@ -283,7 +287,7 @@ class DiffAttention(MixerDiffAttention):
         super().__init__(config, swa=swa, kv_share=kv_share, layer_depth=layer_depth)
         
         # output projection
-        self.c_proj = nn.Linear(config.expand_factor * self.d_model, self.d_model, bias=False)
+        self.c_proj = nn.Linear(self.expand_factor * self.d_model, self.d_model, bias=False)
         self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
     
     def forward(self, x, external_kv=None, cache=None):
@@ -292,13 +296,18 @@ class DiffAttention(MixerDiffAttention):
         return y, cache
     
 class MixerNativeSparseAttention(nn.Module):
-    def __init__(self, config: NanoConfig):
+    def __init__(self, config: NanoConfig, swa=False):
+        assert swa==False
+
         super().__init__()
         self.n_heads = config.n_heads
         self.n_kv_heads = config.n_kv_heads
         self.d_model = config.d_model
-        self.d_head = self.d_model // self.n_heads * config.expand_factor
         self.expand_factor = config.expand_factor
+        #assert self.expand_factor==4, "should be 4 here"
+        #self.expand_factor = config.expand_factor
+        self.d_head = min(128, (self.d_model*self.expand_factor) // self.n_heads) # cap d_head to 128
+        self.expand_factor = (self.n_heads*self.d_head)/self.d_model # and recompute expand_factor
         self.kernel_size = config.nsa_kernel_size
         self.kernel_stride = config.nsa_kernel_stride
         self.block_size = config.nsa_block_size
@@ -316,7 +325,7 @@ class MixerNativeSparseAttention(nn.Module):
         self.pe = torch.nn.Parameter(torch.zeros(self.n_kv_heads, self.kernel_size, self.d_head))
         self.rotary = RotaryEmbedding(RopeConfig(head_dim=self.d_head, rope_theta=10000))
 
-    def forward(self, x):
+    def forward(self, x, external_kv=None, cache=None):
         B, T, _ = x.size()
 
         # here, pass into B*L mode and create cu_seqlens
@@ -358,7 +367,7 @@ class MixerNativeSparseAttention(nn.Module):
         o_swa = flash_attn.flash_attn_varlen_func(q, k, v, cu_seqlens, cu_seqlens, seqlens.max().item(), seqlens.max().item(), causal=True, window_size=(self.window_size, -1))
         o += g_swa[..., None] * o_swa
 
-        o = o.view(B, T, self.d_model*self.expand_factor)
+        o = o.view(B, T, int(self.d_model*self.expand_factor))
         return o, None
 
 class NativeSparseAttention(MixerNativeSparseAttention):
@@ -366,7 +375,7 @@ class NativeSparseAttention(MixerNativeSparseAttention):
         super().__init__(config)
 
         # output projection
-        self.c_proj = nn.Linear(config.expand_factor * self.d_model, self.d_model, bias=False)
+        self.c_proj = nn.Linear(int(self.expand_factor*self.d_model), self.d_model, bias=False)
         self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
 
     def forward(self, x, external_kv=None, cache=None):

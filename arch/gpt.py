@@ -52,33 +52,38 @@ class GPT(nn.Module):
         super().__init__()
         self.config = config
 
-        swas : List[bool] = [] # whether to use swa for each layer
-        for i in range(config.n_layers):
-            swa = (i%2 == 1)
-            swas.append(swa)
-        
-        blocks : List[Block] = []
-        for i in range(config.n_layers):
-            layer_depth = i + 1
-            is_local = swas[i]
-            kv_source = None
-
-            if not config.use_kv_sharing:
-                blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
-                continue
+        if not self.config.is_scorer:
+            swas : List[bool] = [] # whether to use swa for each layer
+            for i in range(config.n_layers):
+                swa = (i%2 == 1)
+                swas.append(swa)
             
-            # KV sharing strategy
-            if config.use_swa:
-                # global/local attn: share kv between consecutive local layers (globals are isolated kv-wise)
-                if is_local and i > 0 and swas[i-1]: # prev is local
-                    if blocks[i-1].kv_source is None: # prev doesn't have kv source
-                        kv_source = blocks[i-1]
-            else:
-                # full global attn: share between every 2 layers
-                if i > 0 and i % 2 == 1: # odd layers get KV from previous even layer
-                    kv_source = blocks[i-1]
+            blocks : List[Block] = []
+            for i in range(config.n_layers):
+                layer_depth = i + 1
+                is_local = swas[i]
+                kv_source = None
+
+                if not config.use_kv_sharing:
+                    blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+                    continue
                 
-            blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+                # KV sharing strategy
+                if config.use_swa:
+                    # global/local attn: share kv between consecutive local layers (globals are isolated kv-wise)
+                    if is_local and i > 0 and swas[i-1]: # prev is local
+                        if blocks[i-1].kv_source is None: # prev doesn't have kv source
+                            kv_source = blocks[i-1]
+                else:
+                    # full global attn: share between every 2 layers
+                    if i > 0 and i % 2 == 1: # odd layers get KV from previous even layer
+                        kv_source = blocks[i-1]
+                    
+                blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+        else:
+            blocks : List[Block] = []
+            for i in range(config.n_layers):
+                blocks.append(Block(config, swa=config.use_swa, layer_depth=i+1, kv_source=None))
             
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.d_model),
@@ -86,6 +91,9 @@ class GPT(nn.Module):
         ))
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
         #self.lm_head.weight.data.zero_()
+
+        if self.config.is_scorer:
+            self.transformer.wte.weight = self.lm_head.weight
 
     def forward(self, idx, targets=None, caches=None, just_logits=False):
         B, L = idx.size()
@@ -118,6 +126,12 @@ class GPT(nn.Module):
         if just_logits:
             logits = self.lm_head(x)
             return logits
+        
+        if self.config.scoring:
+            logits = self.lm_head(x)
+            logits = logits.float() # use tf32/fp32 for logits
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1, reduction='none')
+            return loss
 
         if targets is not None: # if we are given some desired targets also calculate the loss
             if self.config.use_patch_level_training:

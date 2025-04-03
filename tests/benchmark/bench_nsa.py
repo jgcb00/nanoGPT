@@ -21,9 +21,9 @@ memory_table = []
         # argument name whose value corresponds to a different line in the plot
         line_arg='provider',
         # possible values for `line_arg``
-        line_vals=['nsa', 'nsa_bwd', 'flash', 'flash_bwd'],
+        line_vals=['nsa_bwd'],#['nsa', 'nsa_bwd', 'flash', 'flash_bwd'],
         # label name for the lines
-        line_names=['nsa', 'nsa_bwd', 'flash', 'flash_bwd'],
+        line_names=['nsa_bwd'],#['nsa', 'nsa_bwd', 'flash', 'flash_bwd'],
         # line styles
         styles=[('green', '-'), ('blue', '-'), ('red', '-'), ('green', 'dotted'),
                 ('blue', 'dotted'), ('red', 'dotted'), ('cyan', '-'), ('cyan', 'dotted')],
@@ -40,7 +40,7 @@ def benchmark(T, provider):
     device = "cuda"
     dtype = torch.bfloat16
     requires_grad = True
-    B, HQ, H, D = 2, 64, 4, 40
+    B, HQ, H, D = 2, 16, 1, 160
     kernel_size, kernel_stride, block_size, topn, swa = 32, 16, 64, 16, 512
 
     config = NanoConfig()

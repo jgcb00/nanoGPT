@@ -74,12 +74,19 @@ class NanoConfig:
     patch_training_fraction: float = 0.67
     input_bin : str = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
     input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
+
+    # scoring
+    scoring_bin : str = None # input .bin
     
     # evaluation and logging
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     log_wandb : bool = False # whether to log to wandb
+
+    # special - for scores
+    is_scorer: bool = False # whether to use the model as a scorer (tied input+output, shifted data by 10B, will evaluate the first 10B tokens)
+    scoring: bool = False # whether the model is scoring (used for the output of GPT)
 
     # used during training
     slw_window: int = 0
@@ -125,5 +132,8 @@ class NanoConfig:
         assert self.rmsnorm == False, "rmsnorm is not supported in inference for now"
 
         assert not(self.slw_warmup_iters > 0 and self.attn_type == "nsa"), "SLW is not supported with NSA attention"
+
+        if self.is_scorer:
+            assert self.model == "gpt"
 
         self.eval_benchmarks_tasks = self.eval_benchmarks_tasks.split(',')

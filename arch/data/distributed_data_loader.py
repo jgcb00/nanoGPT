@@ -32,8 +32,12 @@ def _load_data_shard(filename):
     assert len(tokens) == ntok, "number of tokens read does not match header?"
     return tokens
 
+def _load_score_shard(filename):
+    # load scores saved as float32 arrays (no header)
+    return np.fromfile(filename, dtype=np.float16)
+
 class DistributedDataLoader:
-    def __init__(self, filename_pattern, B, T, process_rank, num_processes):
+    def __init__(self, filename_pattern, B, T, process_rank, num_processes, score_pattern=None):
         self.process_rank = process_rank
         self.num_processes = num_processes
         self.B = B
@@ -42,6 +46,14 @@ class DistributedDataLoader:
         # glob files that match the pattern
         self.files = sorted(glob.glob(filename_pattern))
         assert len(self.files) > 0, f"did not find any files that match the pattern {filename_pattern}"
+
+        # if scores are provided, load the list and require at least one score file
+        if score_pattern:
+            self.score_files = sorted(glob.glob(score_pattern))
+            assert len(self.score_files) > 0, f"did not find any files that match the score pattern {score_pattern}"
+            #assert len(self.score_files) == len(self.files), "Mismatch between number of score files and data files."
+        else:
+            self.score_files = None
 
         # load and validate all data shards, count number of tokens in total
         ntok_total = 0
@@ -54,15 +66,19 @@ class DistributedDataLoader:
         # kick things off
         self.reset()
 
-    def reset(self):
-        self.current_shard = 0
+    def reset(self, shard=0):
+        self.current_shard = shard
         self.current_position = self.process_rank * self.B * self.T
         self.tokens = _load_data_shard(self.files[self.current_shard])
+        if self.score_files:
+            self.scores = _load_score_shard(self.score_files[self.current_shard])
 
     def advance(self): # advance to next data shard
         self.current_shard = (self.current_shard + 1) % len(self.files)
         self.current_position = self.process_rank * self.B * self.T
         self.tokens = _load_data_shard(self.files[self.current_shard])
+        if self.score_files:
+            self.scores = _load_score_shard(self.score_files[self.current_shard])
         
         if self.process_rank == 0 and self.current_shard % 10 == 0:
             print(f"Advancing to next data shard={self.current_shard} ({self.current_shard//10}B tokens)")
@@ -74,8 +90,17 @@ class DistributedDataLoader:
         buf = torch.tensor(buf.astype(np.int32), dtype=torch.long)
         x = (buf[:-1]).view(B, T) # inputs
         y = (buf[1:]).view(B, T) # targets
+
+        if self.score_files:
+            s_buf = self.scores[self.current_position : self.current_position+B*T]
+            s_buf = torch.tensor(s_buf, dtype=torch.float16).view(B, T)
+
         # advance current position and load next shard if necessary
         self.current_position += B * T * self.num_processes
         if self.current_position + (B * T * self.num_processes + 1) > len(self.tokens):
             self.advance()
-        return x.cuda(), y.cuda()
+
+        if self.score_files:
+            return x.cuda(), y.cuda(), s_buf.cuda()
+        else:
+            return x.cuda(), y.cuda(), None

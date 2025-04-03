@@ -94,11 +94,11 @@ assert nconfig.batch_size % (B * ddp_world_size) == 0
 train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
 
 # load tokens
-train_loader = DistributedDataLoader(nconfig.input_bin, B, T, ddp_rank, ddp_world_size)
+train_loader = DistributedDataLoader(nconfig.input_bin, B, T, ddp_rank, ddp_world_size, score_pattern=nconfig.scoring_bin)
 val_loader = DistributedDataLoader(nconfig.input_val_bin, B, T, ddp_rank, ddp_world_size)
 print0(f"Training DataLoader: total number of tokens: {train_loader.ntok_total} across {len(train_loader.files)} files")
 print0(f"Validation DataLoader: total number of tokens: {val_loader.ntok_total} across {len(val_loader.files)} files")
-x, y = train_loader.next_batch()
+x, y, scores = train_loader.next_batch()
 
 # there are only 50257 unique GPT-2 tokens; we extend to nearest multiple of 128 for efficiency. suggested to me by @Grad62304977.
 # this originates from Karpathy's experiments.
@@ -131,7 +131,12 @@ torch.cuda.synchronize()
 t0 = time.time()
 reset_step = 10 # step at which we reset the timer
 # begin training
-train_loader.reset()
+if nconfig.is_scorer:
+    tokens_per_shard = 100e6
+    tokens_to_skip = 10e9
+    train_loader.reset(shard=math.ceil(tokens_to_skip/tokens_per_shard)+1)
+else:
+    train_loader.reset()
 
 for step in range(nconfig.num_iterations + 1):
     last_step = (step == nconfig.num_iterations)
@@ -164,7 +169,7 @@ for step in range(nconfig.num_iterations + 1):
         val_loader.reset()
         val_loss = 0.0
         for _ in range(val_steps):
-            x_val, y_val = val_loader.next_batch()
+            x_val, y_val, _ = val_loader.next_batch()
             with ctx: # of course, we'd like to use no_grad() here too, but that creates a torch.compile error for some reason
                 loss = model(x_val, targets=y_val)
                 val_loss += loss.detach()
@@ -202,10 +207,10 @@ for step in range(nconfig.num_iterations + 1):
     for i in range(1, train_accumulation_steps+1):
         # forward pass
         with ctx:
-            loss = model(x, targets=y)
+            loss = model(x, targets=y, scores=scores)
             train_loss = loss.detach()
         # advance the dataset for the next batch
-        x, y = train_loader.next_batch()
+        x, y, scores = train_loader.next_batch()
         # backward pass
         if i < train_accumulation_steps:
             with model.no_sync(): # there's no need to sync gradients every accumulation step
@@ -262,7 +267,7 @@ for step in range(nconfig.num_iterations + 1):
         val_loader.current_position = current_pos + val_loader.process_rank * val_loader.B * T
 
         # get the next batch (erase the prev one that used the older B)
-        x, y = train_loader.next_batch()
+        x, y, scores = train_loader.next_batch()
 
         # reset optimizer state  #todo: clean and re-use the optimizer creation code
         del optimizers
@@ -283,6 +288,35 @@ for step in range(nconfig.num_iterations + 1):
 print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
 print0("Training complete.")
 dist.destroy_process_group()
+
+# ====================================== SCORER ======================================
+if nconfig.is_scorer and master_process:
+    train_loader.reset(shard=0)
+    run_id = nconfig.run_name + '_' + str(uuid.uuid4().hex[:8])
+    data_dir = f"data/{run_id}/"
+    os.makedirs(data_dir, exist_ok=True)
+
+    shard_losses = []
+    last_shard = train_loader.current_shard
+    while train_loader.current_shard < int(tokens_to_skip/tokens_per_shard):
+        x, y, _ = train_loader.next_batch()
+        with ctx:
+            loss = raw_model(x, targets=y)
+            shard_losses.append(loss.detach().item()) # (B, T)
+        
+        if train_loader.current_shard != last_shard:
+            shard_file = f"{data_dir}/shard_{last_shard:03d}.bin"
+            with open(shard_file, "wb") as f:
+                np.array(shard_losses, dtype=np.float32).tofile(f)
+            print0(f"Saved shard losses to {shard_file}")
+            shard_losses = []
+            last_shard = train_loader.current_shard
+
+    if shard_losses:
+        shard_file = f"{data_dir}/shard_{last_shard:03d}.bin"
+        with open(shard_file, "wb") as f:
+            np.array(shard_losses, dtype=np.float32).tofile(f)
+        print0(f"Saved shard losses to {shard_file}")
 
 # ====================================== EVAL - BENCHMARKS ======================================
 if nconfig.eval_benchmarks and master_process:
