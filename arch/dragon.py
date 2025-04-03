@@ -167,10 +167,7 @@ class Dragon(nn.Module):
         if scores is not None:
             # scores is (B, L)
 
-            loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)
-            print(loss.shape)
-            print(scores.shape)
-            print("YaaaaaaY")
+            loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)  
 
         if targets is not None: # if we are given some desired targets also calculate the loss
             if self.config.use_patch_level_training:

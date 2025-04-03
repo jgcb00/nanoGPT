@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Union
 
 # todo: on pourra utiliser un typing union pour forcer certaines valeurs c'est plus propre
 # gpt: n_layers=12, expand_factor=1; dragon: n_layers=7, expand_factor=2
@@ -76,7 +76,7 @@ class NanoConfig:
     input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
 
     # scoring
-    scoring_bin : str = None # input .bin
+    scoring_bin : Union[str, None] = None # input .bin
     
     # evaluation and logging
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
