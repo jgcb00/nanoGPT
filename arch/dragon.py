@@ -129,7 +129,7 @@ class Dragon(nn.Module):
             wte = nn.Embedding(config.vocab_size, config.d_model),
             h = nn.ModuleList(blocks),
         ))
-        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+        self.lm_head = nn.Linear(config.d_model, config.vocab_size,  dtype=torch.bfloat16, bias=False)
         #self.lm_head.weight.data.zero_()
 
     def forward(self, idx, targets=None, scores=None, caches=None, just_logits=False):
@@ -162,12 +162,7 @@ class Dragon(nn.Module):
 
         if just_logits:
             logits = self.lm_head(x)
-            return logits
-        
-        if scores is not None:
-            # scores is (B, L)
-
-            loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)  
+            return logits            
 
         if targets is not None: # if we are given some desired targets also calculate the loss
             if self.config.use_patch_level_training:
@@ -219,14 +214,28 @@ class Dragon(nn.Module):
                         loss += F.nll_loss(log_probs, targets[:, i], ignore_index=-1)
                     loss /= self.config.patch_size
             else:
-                if self.config.fused_loss_computation:
-                    criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
-                    loss = criterion(x, targets, self.lm_head.weight)
+                if self.config.fused_loss_computation and scores is not None:
+                    
+                    x = x.to(torch.bfloat16)
+                    scores = scores.to(torch.bfloat16)
+                    scores = scores - 1.0
+                    scores = torch.where(scores < 0.3, scores.new_tensor(0.3), scores)
+                    scores = torch.sqrt(scores)
+                    scores[:, :32] = 1
+                    #print(scores[:, 2500:2520])
+                    loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)
+                    loss = loss * scores
+                    #print(loss)
+                    loss = torch.mean(loss.view(1, -1))
+                    #print(loss)
                     
                     #criterion = FusedCrossEntropyLoss(ignore_index=-1)
                     #logits = self.lm_head(x)
                     #logits = logits.float() # use tf32/fp32 for logits
                     #loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
+                elif self.config.fused_loss_computation:
+                    criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
+                    loss = criterion(x, targets, self.lm_head.weight)
                 else:
                     logits = self.lm_head(x)
                     logits = logits.float() # use tf32/fp32 for logits

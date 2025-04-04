@@ -60,6 +60,14 @@ model = get_model(config)
 model = model.to(torch.bfloat16)
 model = torch.compile(model, dynamic=False)
 model = model.cuda()
+
+model_file = sorted(args.run_dir.glob("state_step*.pt"))[-1]
+assert model_file.exists(), f"Model file {model_file} does not exist."
+print(f"Loading model from {model_file}.")
+
+checkpoint = torch.load(model_file)
+model.load_state_dict(checkpoint['model'])
+
 model = DDP(model, device_ids=[ddp_local_rank])
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 
@@ -86,7 +94,7 @@ while train_loader.current_shard < total_shards:
     if master_process:
         pbar.set_description(f"Shard {train_loader.current_shard}/{total_shards}")
     
-    x, y = train_loader.next_batch()
+    x, y , _ = train_loader.next_batch()
     with ctx, torch.no_grad():
         loss = model(x, targets=y) # (B*L)
 
