@@ -155,7 +155,7 @@ class Attention(MixerAttention):
         
         # output projection
         self.c_proj = nn.Linear(self.expand_factor * self.d_model, self.d_model, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
     
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x, external_kv, cache)
@@ -288,7 +288,7 @@ class DiffAttention(MixerDiffAttention):
         
         # output projection
         self.c_proj = nn.Linear(self.expand_factor * self.d_model, self.d_model, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
     
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x, external_kv, cache)
@@ -376,7 +376,7 @@ class NativeSparseAttention(MixerNativeSparseAttention):
 
         # output projection
         self.c_proj = nn.Linear(int(self.expand_factor*self.d_model), self.d_model, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
 
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x)

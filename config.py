@@ -76,7 +76,8 @@ class NanoConfig:
     input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
 
     # scoring
-    scoring_bin : Union[str, None] = None # input .bin
+    scoring_bin: Union[str, None] = None # input .bin
+    scores_loss_coupling: str = "sqrt" # sqrt, soft-rho1
     
     # evaluation and logging
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end

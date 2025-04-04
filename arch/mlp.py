@@ -9,7 +9,7 @@ class MLP(nn.Module):
         super().__init__()
         self.c_fc    = nn.Linear(config.d_model, 4 * config.d_model, bias=False)
         self.c_proj  = nn.Linear(4 * config.d_model, config.d_model, bias=False)
-        self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
 
     def forward(self, x):
         x = self.c_fc(x)

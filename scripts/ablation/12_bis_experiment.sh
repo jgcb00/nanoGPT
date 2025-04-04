@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment12_GDN_init0.err            # standard error file
-#SBATCH --output=logs/experiment12_GDN_init0.out           # standard output file
+#SBATCH --error=logs/experiment12bis_scoring_softrho1_a0.5.err            # standard error file
+#SBATCH --output=logs/experiment12bis_scoring_softrho1_a0.5.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -44,9 +44,10 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp12_Dragon-L-GDN-diff-scores_m9_sqrt-adamw \
+    --run_name exp12_Dragon-L-GDN-diff-scores_softrho1_a0.5-adamw \
     --model dragon \
     --scoring_bin 'data/exp0_GPT2-xs-scorer_25f0c569/scores_*.bin' \
+    --scores_loss_coupling 'soft-rho1' \
     --d_model 1280 \
     --n_heads 20 \
     --n_kv_heads 10 \
@@ -73,6 +74,6 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --val_loss_every 250 \
     --val_tokens 10002432 \
     --save_every 10000 \
-    --no-log_wandb \
+    --log_wandb \
     --no-eval_benchmarks \
     --no-evalpg19

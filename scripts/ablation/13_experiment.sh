@@ -38,39 +38,41 @@ DISTRIBUTED_ARGS=(
 # +cross-layer KV sharing
 # +layer-norm scaling
 # +diff-attention
-# +scalable softmax
 
 
 # For 10B tokens model
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp13_Dragon-L-scalable_softmax_no_qk_norm-adamw \
+    --run_name exp13_Dragon-L-scalable_softmax-dff-deepseekinit-adamw \
     --model dragon \
     --d_model 1280 \
     --n_heads 20 \
     --n_kv_heads 10 \
     --n_layers 20 \
     --use_kv_sharing \
-    --attn_type diff \
-    --scalable_softmax \
+    --use_swa \
     --no-qk-norm \
+    --attn_type diff \
+    --lin_attn_type mamba2 \
     --expand_factor 2 \
     --layer-norm-scaling \
-    --use_swa \
+    --scalable_softmax \
     --optim adamw \
     --batch_size 64 \
     --device_batch_size 2 \
     --learning_rate 9.7e-4 \
     --num_iterations 32990 \
-    --warmup_iters 150 \
-    --warmdown_iters 4949 \
+    --warmup_iters 0.0045 \
+    --warmdown_iters 0.15 \
     --weight_decay 0.1 \
     --sequence_length 4736 \
     --vocab_size 50304 \
-    --input_bin 'data/fineweb10B/fineweb_train_*.bin' \
-    --input_val_bin 'data/fineweb10B/fineweb_val_*.bin' \
+    --input_bin '../nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
+    --input_val_bin '../nanoGPT/data/fineweb100B/fineweb_val_*.bin' \
     --val_loss_every 250 \
     --val_tokens 10002432 \
     --save_every 10000 \
+    --eval_benchmarks_tasks 'hellaswag,swde,fda' \
+    --evalpg19 \
     --log_wandb

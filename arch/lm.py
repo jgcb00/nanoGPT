@@ -19,7 +19,7 @@ class NanoLM(LM):
         super().__init__()
 
         self.model = model
-        self.config = config
+        self.config = model.config
         self.enc = enc
 
         self.batch_size = batch_size

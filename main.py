@@ -103,8 +103,7 @@ x, y, scores = train_loader.next_batch()
 # there are only 50257 unique GPT-2 tokens; we extend to nearest multiple of 128 for efficiency. suggested to me by @Grad62304977.
 # this originates from Karpathy's experiments.
 num_vocab = 50304
-model = get_model(nconfig)        
-
+model = get_model(nconfig)
 #count parameters
 num_params = sum(p.numel() for p in model.parameters())
 print0(f"number of parameters: {num_params}")
@@ -112,6 +111,8 @@ nconfig.num_params = num_params
 model = model.to(torch.bfloat16)
 model = torch.compile(model, dynamic=False)
 model = model.cuda()
+
+print0(model)
 
 # here we wrap model into DDP container
 model = DDP(model, device_ids=[ddp_local_rank])

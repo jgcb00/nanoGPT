@@ -26,9 +26,8 @@ def eval_benchmarks(log_dir, model, tokenizer_path, limit=None):
     
     # wrap model in a LM object
     lm = NanoLM(
-        model=model, 
-        config=config, 
-        enc=enc, 
+        model=model,
+        enc=enc,
     )
 
     # evaluate

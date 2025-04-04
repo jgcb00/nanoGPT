@@ -238,7 +238,7 @@ class Mamba2(MixerMamba2):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=False)
-        self.out_proj.weight.data.zero_()
+        #self.out_proj.weight.data.zero_()
     
     def forward(self, u, cache=None):
         out, cache = super().forward(u, cache=cache)

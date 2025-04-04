@@ -11,6 +11,6 @@ export HF_DATASETS_OFFLINE="1"
 #torch run here can cause issue due to the port that might be already in used by another process
 python eval.py \
     --run_dir ${1} \
-    --tasks fda,swde
+    --tasks hellaswag,fda,swde
 
 #hellaswag,swde,fda,arc_easy,arc_challenge,piqa,winogrande,lambada,openbookqa,squadv2

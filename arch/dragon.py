@@ -21,15 +21,18 @@ class Block(nn.Module):
         """
         super().__init__()
 
-        match config.attn_type:
-            case "normal":
-                self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
-            case "diff":
-                self.attn = MixerDiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
-            case "nsa":
-                self.attn = MixerNativeSparseAttention(config, swa=swa)
-            case _:
-                raise ValueError(f"Unknown attention type {config.attn_type}")
+        if not swa:
+            match config.attn_type:
+                case "normal":
+                    self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
+                case "diff":
+                    self.attn = MixerDiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
+                case "nsa":
+                    self.attn = MixerNativeSparseAttention(config, swa=swa)
+                case _:
+                    raise ValueError(f"Unknown attention type {config.attn_type}")
+        else:
+            self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
 
         match config.lin_attn_type:
             case "mamba2":
@@ -43,7 +46,7 @@ class Block(nn.Module):
 
         self.kv_source = kv_source
         self.out_proj = nn.Linear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
-        self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        #self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
         self.attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
         self.is_lin_attn_norm = config.rmsnorm
         if not config.rmsnorm:
@@ -132,6 +135,17 @@ class Dragon(nn.Module):
         self.lm_head = nn.Linear(config.d_model, config.vocab_size,  dtype=torch.bfloat16, bias=False)
         #self.lm_head.weight.data.zero_()
 
+        self.apply(self._init_weights)
+
+    def _init_weights(self, module: nn.Module):
+
+        if isinstance(module, (nn.Linear, nn.Conv1d)):
+            nn.init.normal_(module.weight, mean=0.0, std=0.006)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            nn.init.normal_(module.weight, mean=0.0, std=0.006)
+
     def forward(self, idx, targets=None, scores=None, caches=None, just_logits=False):
         B, L = idx.size()
 
@@ -215,24 +229,37 @@ class Dragon(nn.Module):
                     loss /= self.config.patch_size
             else:
                 if self.config.fused_loss_computation and scores is not None:
+
+                    # x : (B, L, d_model)
+                    # targets : (B, L)
+                    # scores : (B, L)
+
+                    if self.config.scores_loss_coupling == "sqrt":
+                        x = x.to(torch.bfloat16)
+                        scores = scores.to(torch.bfloat16)
+                        scores = scores - 1.0
+                        scores = torch.where(scores < 0.3, scores.new_tensor(0.3), scores)
+                        scores = torch.sqrt(scores)
+                        scores[:, :32] = 1
+                        #print(scores[:, 2500:2520])
+                        loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)
+                        loss = loss * scores
+                        #print(loss)
+                        loss = torch.mean(loss.view(1, -1))
+                        #print(loss)
+                    elif self.config.scores_loss_coupling == "soft-rho1":
+                        x = x.to(torch.bfloat16)
+                        scores = scores.to(torch.bfloat16)
+
+                        unscaled_loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)
+
+                        alpha = 0.5
+                        smooth_weights = torch.sigmoid(alpha * (scores-scores.mean()))
+
+                        loss = (unscaled_loss * smooth_weights).sum() / smooth_weights.sum()
+                    else:
+                        raise ValueError(f"Unknown scores_loss_coupling {self.config.scores_loss_coupling}")
                     
-                    x = x.to(torch.bfloat16)
-                    scores = scores.to(torch.bfloat16)
-                    scores = scores - 1.0
-                    scores = torch.where(scores < 0.3, scores.new_tensor(0.3), scores)
-                    scores = torch.sqrt(scores)
-                    scores[:, :32] = 1
-                    #print(scores[:, 2500:2520])
-                    loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)
-                    loss = loss * scores
-                    #print(loss)
-                    loss = torch.mean(loss.view(1, -1))
-                    #print(loss)
-                    
-                    #criterion = FusedCrossEntropyLoss(ignore_index=-1)
-                    #logits = self.lm_head(x)
-                    #logits = logits.float() # use tf32/fp32 for logits
-                    #loss = criterion(logits.view(-1, logits.size(-1)), targets.view(-1))
                 elif self.config.fused_loss_computation:
                     criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
                     loss = criterion(x, targets, self.lm_head.weight)
