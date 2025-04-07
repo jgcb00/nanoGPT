@@ -18,6 +18,7 @@ import torch
 import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.attention.flex_attention import create_block_mask
 from arch.utils import get_model
 from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
@@ -139,6 +140,18 @@ if nconfig.is_scorer:
 else:
     train_loader.reset()
 
+wsize = 0
+if nconfig.local_attn_type == "metatokens":
+    wsize = nconfig.swa_window_size
+    def attn_mask(b, h, q_idx, kv_idx):
+        causal = q_idx >= kv_idx
+        swa = q_idx - kv_idx <= wsize
+        prefix = kv_idx < nconfig.num_meta_tokens
+        return causal & (swa | prefix)
+    block_mask_local = create_block_mask(attn_mask, B=None, H=None, Q_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, KV_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, _compile=True)
+    for block in raw_model.transformer.h:
+        block.attn.block_mask = block_mask_local
+
 for step in range(nconfig.num_iterations + 1):
     last_step = (step == nconfig.num_iterations)
     # This effectively ignores timing first 10 steps, which are slower for weird reasons.
@@ -151,6 +164,8 @@ for step in range(nconfig.num_iterations + 1):
 
     # update the window size, following SkyLadder (https://arxiv.org/abs/2503.15450)
     if nconfig.model in ["gpt", "dragon"] and nconfig.slw_warmup_iters > 0:
+        wsize_old = wsize
+
         slw_warmup_iters = int(nconfig.slw_warmup_iters * nconfig.num_iterations)
 
         progress_ratio = step / slw_warmup_iters
@@ -158,6 +173,20 @@ for step in range(nconfig.num_iterations + 1):
         window = nconfig.slw_increment * math.ceil(window / nconfig.slw_increment) # quantize
         window = int(min(window, nconfig.sequence_length)) # cap
         nconfig.slw_window = window
+
+        if nconfig.local_attn_type == "metatokens":
+            wsize = min(nconfig.slw_window, nconfig.swa_window_size)
+
+            if wsize != wsize_old:
+                def attn_mask(b, h, q_idx, kv_idx):
+                    causal = q_idx >= kv_idx
+                    swa = q_idx - kv_idx <= wsize
+                    prefix = kv_idx < nconfig.num_meta_tokens
+                    return causal & (swa | prefix)
+                block_mask_local = create_block_mask(attn_mask, B=None, H=None, Q_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, KV_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, _compile=True)
+
+                for block in raw_model.transformer.h:
+                    block.attn.block_mask = block_mask_local
 
     # --------------- VALIDATION SECTION -----------------
     if (last_step or (nconfig.val_loss_every > 0 and step % nconfig.val_loss_every == 0)):

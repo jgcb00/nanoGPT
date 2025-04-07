@@ -19,6 +19,9 @@ WILL BE DELETED, AS THIS CODE IS ALSO PRESENT AFTER THE TRAINING LOOP IN THE MAI
 """
 
 def eval_benchmarks(log_dir, model, tokenizer_path, limit=None, tasks=None):
+    if isinstance(log_dir, str):
+        log_dir = Path(log_dir)
+      
     if tasks is None:
         tasks = model.config.eval_benchmarks_tasks
 

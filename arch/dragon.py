@@ -9,7 +9,7 @@ from cut_cross_entropy import linear_cross_entropy
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention, MixerNativeSparseAttention
+from arch.mixer.mixer_attention import MixerAttention, MixerMetaTokensAttention, MixerDiffAttention, MixerNativeSparseAttention
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 
@@ -24,7 +24,10 @@ class Block(nn.Module):
         if not swa:
             match config.attn_type:
                 case "normal":
-                    self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
+                    if config.num_meta_tokens == 0:
+                        self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
+                    else:
+                        self.attn = MixerMetaTokensAttention(config, swa=swa, kv_share=(kv_source is not None))
                 case "diff":
                     self.attn = MixerDiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
                 case "nsa":
@@ -32,7 +35,17 @@ class Block(nn.Module):
                 case _:
                     raise ValueError(f"Unknown attention type {config.attn_type}")
         else:
-            self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
+            match config.local_attn_type:
+                case "normal":
+                    self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
+                case "diff":
+                    self.attn = MixerDiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
+                case "nsa":
+                    self.attn = MixerNativeSparseAttention(config, swa=swa)
+                case "metatokens":
+                    self.attn = MixerMetaTokensAttention(config, swa=swa, kv_share=(kv_source is not None))
+                case _:
+                    raise ValueError(f"Unknown attention type {config.local_attn_type}")
 
         match config.lin_attn_type:
             case "mamba2":
@@ -135,6 +148,9 @@ class Dragon(nn.Module):
         self.lm_head = nn.Linear(config.d_model, config.vocab_size,  dtype=torch.bfloat16, bias=False)
         #self.lm_head.weight.data.zero_()
 
+        if self.config.num_meta_tokens > 0:
+            self.meta_tokens = nn.Parameter(torch.randn(self.config.num_meta_tokens, self.config.d_model))
+
         self.apply(self._init_weights)
 
     def _init_weights(self, module: nn.Module):
@@ -151,6 +167,12 @@ class Dragon(nn.Module):
 
         # forward the Dragon model itself
         x = self.transformer.wte(idx) # token embeddings of shape (B, L, d_model)
+
+        if self.config.num_meta_tokens > 0:
+            # add meta tokens
+            meta_tokens = self.meta_tokens.expand(B, -1, -1)
+            x = torch.cat((meta_tokens, x), dim=1) # (B, num_meta_tokens+L, d_model)
+            L += self.config.num_meta_tokens
 
         if self.config.use_patch_level_training:
             x = x.view(B, L//self.config.patch_size, self.config.patch_size, -1).mean(2) # (B, num_patches, D)
@@ -173,6 +195,10 @@ class Dragon(nn.Module):
                     caches[i] = cache
 
         x = F.rms_norm(x, (x.size(-1),))
+
+        if self.config.num_meta_tokens > 0:
+            # remove meta tokens
+            x = x[:, self.config.num_meta_tokens:, :].contiguous() # (B, L, d_model)
 
         if just_logits:
             logits = self.lm_head(x)

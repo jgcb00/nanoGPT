@@ -3,9 +3,9 @@
 #SBATCH --ntasks-per-node=1 # number of tasks per node
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1         # number of gpus per node
-#SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/eval02.err            # standard error file
-#SBATCH --output=logs/eval02.out           # standard output file
+#SBATCH --time=01:00:00              # time limits: here 1 hour
+#SBATCH --error=logs/eval16.err            # standard error file
+#SBATCH --output=logs/eval16.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 

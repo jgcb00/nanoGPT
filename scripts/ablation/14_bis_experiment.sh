@@ -3,9 +3,9 @@
 #SBATCH --ntasks-per-node=1 # number of tasks per node
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
-#SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment13_GDN.err            # standard error file
-#SBATCH --output=logs/experiment13_GDN.out           # standard output file
+#SBATCH --time=08:00:00              # time limits: here 1 hour
+#SBATCH --error=logs/experiment14_GDN_MT_SL.err            # standard error file
+#SBATCH --output=logs/experiment14_GDN_MT_SL.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -43,8 +43,14 @@ DISTRIBUTED_ARGS=(
 # For 10B tokens model
 # BS = 297459
 
+export CUDA_LAUNCH_BLOCKING=1
+export TORCH_USE_CUDA_DSA=1
+
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp13_Dragon-L-GDN-scalable_softmax-dff-deepseekinit-adamw \
+    --run_name exp14_bis_Dragon-L-GDN-meta_tokens_128_skyladder_0.6-adamw \
+    --num_meta_tokens 128 \
+    --local_attn_type metatokens \
+    --slw_warmup_iters 0.6 \
     --model dragon \
     --d_model 1280 \
     --n_heads 20 \
@@ -74,6 +80,6 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --val_tokens 10002432 \
     --save_every 10000 \
     --eval_benchmarks_tasks 'hellaswag,swde,fda' \
-    --no-eval_benchmarks \
+    --eval_benchmarks \
     --no-evalpg19 \
     --log_wandb

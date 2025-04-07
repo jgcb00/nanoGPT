@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.attention.flex_attention import create_block_mask, flex_attention
 import flash_attn
 
 try:
@@ -139,6 +140,119 @@ class MixerAttention(nn.Module):
                     wsize = -1
         
         y = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        y = y.contiguous().view(B, T, self.d_model*self.expand_factor)
+        return y, cache
+    
+    def get_kv(self):
+        """ used for cross-layer kv sharing """
+        return self.last_k, self.last_v
+    
+    def get_empty_cache(self):
+        return (None, None, 0) # (k_cache, v_cache, pos)
+    
+class MixerMetaTokensAttention(nn.Module):
+    def __init__(self, config: NanoConfig, swa: bool = False, kv_share: bool = False):
+        super().__init__()
+
+        self.config = config
+        self.n_heads = config.n_heads
+        self.n_kv_heads = config.n_kv_heads
+        self.n_kv_repeats = self.n_heads // self.n_kv_heads
+        self.d_model = config.d_model
+        #self.expand_factor = config.expand_factor//2 if swa else config.expand_factor
+        #assert self.expand_factor==2, "should be 2 here"
+        self.expand_factor = config.expand_factor
+        self.d_head = (self.d_model*self.expand_factor) // self.n_heads
+        self.swa, self.swa_window_size = swa, config.swa_window_size
+        self.rope = self.swa or not config.rope_to_nope
+        self.qk_norm = config.qk_norm
+        self.scalable_softmax = config.scalable_softmax
+        if config.disable_scalable_softmax_for_local and self.swa:
+            self.scalable_softmax = False
+        assert self.d_model % self.n_heads == 0
+
+        self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
+        if not kv_share: # only define kv projs if not sharing
+            self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
+            self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
+        self.rotary = Rotary(self.d_head)
+        
+        if self.scalable_softmax:
+            self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads))
+
+        wsize = config.swa_window_size
+        def attn_mask(b, h, q_idx, kv_idx):
+            causal = q_idx >= kv_idx
+            swa = q_idx - kv_idx <= wsize
+            prefix = kv_idx < config.num_meta_tokens
+            return causal & (swa | prefix)
+        block_mask_local = create_block_mask(attn_mask, B=None, H=None, Q_LEN=config.sequence_length+config.num_meta_tokens, KV_LEN=config.sequence_length+config.num_meta_tokens, _compile=True)
+        self.block_mask = block_mask_local
+
+        self.last_k = None
+        self.last_v = None
+
+    def forward(self, x, external_kv=None, cache=None):
+        # x: (B,T,D) -> y: (B,T,D)
+        # external_kv: used in training, to use the kv from the previous layer
+        # cache: used at inference, to store the kv from the past (k, v, pos)
+
+        B, T, _ = x.size()
+
+        q = self.c_q(x).view(B, T, self.n_heads, self.d_head)
+
+        start_pos = cache[2] if cache is not None else 0
+        
+        if external_kv is not None: # kv-sharing path
+            k, v = external_kv
+
+            if self.rope:
+                cos, sin = self.rotary(q, start_pos)
+            q = F.rms_norm(q, (q.size(-1),)) if self.qk_norm else q # QK norm (only for q)
+            if self.rope:
+                q = apply_rotary_emb(q, cos, sin) # RoPE
+        else: # regular path
+            k = self.c_k(x).view(B, T, self.n_kv_heads, self.d_head)
+            v = self.c_v(x).view(B, T, self.n_kv_heads, self.d_head)
+            
+            if self.rope:
+                cos, sin = self.rotary(q, start_pos)
+            q, k = (F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),))) if self.qk_norm else (q, k) # QK norm suggested by @Grad62304977
+            if self.rope:
+                q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
+            
+            self.last_k, self.last_v = k, v
+        
+        if self.scalable_softmax:
+            # scalable-softmax (https://arxiv.org/abs/2501.19399): multiply q by s*log(n)
+            log_pos = torch.arange(start_pos+1, start_pos+T+1, device=q.device).view(1, T, 1, 1).float().log()
+            q = (self.softmax_scaler.view(1, 1, -1, 1) * log_pos) * q
+
+        new_pos = start_pos + T
+        if cache is not None:
+            past_k, past_v, _ = cache
+            if past_k is not None: # not first token
+                k = torch.cat([past_k, k], dim=1)
+                v = torch.cat([past_v, v], dim=1)
+            
+            cache = (k, v, new_pos)
+        
+        k, v = repeat_kv(k, self.n_kv_repeats), repeat_kv(v, self.n_kv_repeats) # GQA (todo: can be handled by FA)
+
+        #todo:make compatible with skyladder
+        """
+        wsize = self.swa_window_size if self.swa else -1
+        if self.config.slw_window > 0:
+            if self.swa:
+                wsize = min(self.config.slw_window, self.swa_window_size)
+            else:
+                if self.config.slw_window < self.config.sequence_length:
+                    wsize = self.config.slw_window
+                else:
+                    wsize = -1
+        """
+
+        y = flex_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), block_mask=self.block_mask).transpose(1, 2)
         y = y.contiguous().view(B, T, self.d_model*self.expand_factor)
         return y, cache
     

@@ -15,7 +15,8 @@ class NanoConfig:
     n_heads : int = 6 # head dim 128 suggested by @Grad62304977
     n_layers : int = 12
     expand_factor : int = 1 # expand factor for Mamba/Dragon
-    attn_type : str = "normal" # normal, diff, nsa
+    attn_type : str = "normal" # normal, diff, nsa, metatokens
+    local_attn_type: str = "normal"
     lin_attn_type: str = "mamba2" # mamba2, gdn
     layer_norm_scaling : bool = False # whether to scale layer norm by sqrt(layer_depth)
     fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
@@ -32,6 +33,7 @@ class NanoConfig:
     scalable_softmax: bool = False
     disable_scalable_softmax_for_local: bool = True
     rope_to_nope: bool = False # whether to use the rope-to-nope arch (2501.18795, ie disable RoPE in full attn layers) (only effective if use_swa=True)
+    num_meta_tokens: int = 0
 
     # NSA specific
     nsa_kernel_size: int = 32
