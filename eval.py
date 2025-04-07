@@ -18,7 +18,10 @@ USED FOR EVALUATING ALREADY, OLD, TRAINED MODELS
 WILL BE DELETED, AS THIS CODE IS ALSO PRESENT AFTER THE TRAINING LOOP IN THE MAIN SCRIPT
 """
 
-def eval_benchmarks(log_dir, model, tokenizer_path, limit=None):
+def eval_benchmarks(log_dir, model, tokenizer_path, limit=None, tasks=None):
+    if tasks is None:
+        tasks = model.config.eval_benchmarks_tasks
+
     # load tokenizer
     with open(tokenizer_path, 'rb') as f:
         enc_pickled = pickle.load(f)
@@ -31,15 +34,15 @@ def eval_benchmarks(log_dir, model, tokenizer_path, limit=None):
     )
 
     # evaluate
-    results = lm_eval.simple_evaluate(lm, tasks=args.tasks, limit=limit)
+    results = lm_eval.simple_evaluate(lm, tasks=tasks, limit=limit)
 
     # export all the results to a json file (to see the completions)
-    result_file_path = log_dir / f"results_{'_'.join(args.tasks)}.json"
+    result_file_path = log_dir / f"results_{'_'.join(tasks)}.json"
     with open(result_file_path, 'w') as f:
         json.dump(results, f, indent=4)
 
     # save the scores in a separate file, also tell in the file if limit is not None
-    result_file_path = log_dir / f"scores_{'_'.join(args.tasks)}"
+    result_file_path = log_dir / f"scores_{'_'.join(tasks)}"
     if limit is not None:
         result_file_path = result_file_path.with_suffix(f"_{limit}.json")
     else:
@@ -83,6 +86,6 @@ if __name__ == "__main__":
     new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
     model.load_state_dict(new_state_dict)
 
-    _ = eval_benchmarks(args.run_dir, model, 'data/enc.pkl')
+    _ = eval_benchmarks(args.run_dir, model, 'data/enc.pkl', tasks=args.tasks)
 
     print(f"Done evaluating {args.run_dir} on {args.tasks}.")
