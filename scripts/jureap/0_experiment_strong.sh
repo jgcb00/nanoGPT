@@ -27,13 +27,9 @@ DISTRIBUTED_ARGS=(
     --rdzv_backend c10d
 )
 
-# BASE MODEL FOR COMPARISON
-
-# For 10B tokens model
-# BS = 297459
-
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --run_name dragon-L-adamw \
+    --setup_only \
     --model dragon \
     --d_model 1280 \
     --n_heads 20 \

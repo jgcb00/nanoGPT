@@ -9,6 +9,9 @@ class NanoConfig:
     # model
     model : str = "gpt" #gpt or dragon or gated-delta-net or mamba2
     run_name : str = ""
+
+    # mode
+    setup_only: bool = False # whether to only do the setup
     
     # arch - general
     d_model : int = 768

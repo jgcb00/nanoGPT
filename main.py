@@ -13,9 +13,7 @@ import pickle
 import wandb
 
 import math
-import numpy as np
 import torch
-import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.attention.flex_attention import create_block_mask
@@ -135,6 +133,11 @@ if nconfig.is_scorer:
     train_loader.reset(shard=math.ceil(tokens_to_skip/tokens_per_shard)+1)
 else:
     train_loader.reset()
+
+if nconfig.setup_only:
+    print0("Setup only mode. Exiting.")
+    dist.destroy_process_group()
+    sys.exit()
 
 wsize = 0
 if nconfig.local_attn_type == "metatokens":
