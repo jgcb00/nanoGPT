@@ -3,5 +3,5 @@ import pickle
 
 enc = tiktoken_ext.openai_public.gpt2()
 
-with open('enc.pkl', 'wb') as file:
+with open('data/enc.pkl', 'wb') as file:
     pickle.dump(enc, file)

@@ -24,12 +24,14 @@ class GPT_LM(LM):
 # + : mmlu, triviaqa, arc, piqa, winogrande
     
 lm = GPT_LM()
+#_ = lm_eval.simple_evaluate(lm, tasks=["swde"])
+#_ = lm_eval.simple_evaluate(lm, tasks=["fda"])
+_ = lm_eval.simple_evaluate(lm, tasks=["hellaswag"])
+"""
 _ = lm_eval.simple_evaluate(lm, tasks=["lambada"])
 _ = lm_eval.simple_evaluate(lm, tasks=["openbookqa"])
-"""
 _ = lm_eval.simple_evaluate(lm, tasks=["squadv2"])
 _ = lm_eval.simple_evaluate(lm, tasks=["squad_completion"])
-_ = lm_eval.simple_evaluate(lm, tasks=["fda"])
 _ = lm_eval.simple_evaluate(lm, tasks=["nq_open"])
 _ = lm_eval.simple_evaluate(lm, tasks=["drop"])
 _ = lm_eval.simple_evaluate(lm, tasks=["mmlu"])
@@ -39,6 +41,4 @@ _ = lm_eval.simple_evaluate(lm, tasks=["arc_challenge"])
 _ = lm_eval.simple_evaluate(lm, tasks=["piqa"])
 _ = lm_eval.simple_evaluate(lm, tasks=["squadv2"])
 _ = lm_eval.simple_evaluate(lm, tasks=["winogrande"])
-_ = lm_eval.simple_evaluate(lm, tasks=["hellaswag"])
-_ = lm_eval.simple_evaluate(lm, tasks=["swde"])"
 """

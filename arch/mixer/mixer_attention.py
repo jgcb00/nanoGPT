@@ -9,8 +9,11 @@ try:
 except ImportError:
     pass
 
-from native_sparse_attention.ops import compressed_attention, topk_sparse_attention, linear_compress, avgpool_compress, weightedpool_compress
-from native_sparse_attention.module.rope import RopeConfig, RotaryEmbedding
+try:
+    from native_sparse_attention.ops import compressed_attention, topk_sparse_attention, linear_compress, avgpool_compress, weightedpool_compress
+    from native_sparse_attention.module.rope import RopeConfig, RotaryEmbedding
+except ImportError:
+    pass
 
 from config import NanoConfig
 import math

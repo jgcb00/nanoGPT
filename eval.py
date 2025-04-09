@@ -47,7 +47,7 @@ def eval_benchmarks(log_dir, model, tokenizer_path, limit=None, tasks=None):
     # save the scores in a separate file, also tell in the file if limit is not None
     result_file_path = log_dir / f"scores_{'_'.join(tasks)}"
     if limit is not None:
-        result_file_path = result_file_path.with_suffix(f"_{limit}.json")
+        result_file_path = result_file_path.with_suffix(f".limit{limit}.json")
     else:
         result_file_path = result_file_path.with_suffix('.json')
     with open(result_file_path, 'w') as f:
