@@ -24,10 +24,6 @@ from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 from arch.optim.get_optimizer import get_optimizers
 from arch.schedulers import get_schedulers
-# TODO:
-# check correspondance with megatron : do they have extra hparams ? do we have extra hparams?
-# next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
-# learning rate decay scheduler (linear warmup and warmdown)
 
 nconfig = tyro.cli(NanoConfig)
 assert nconfig.run_name != "", "Please provide a run name for this training run."
@@ -299,7 +295,7 @@ for step in range(nconfig.num_iterations + 1):
         # get the next batch (erase the prev one that used the older B)
         x, y, scores = train_loader.next_batch()
 
-        # reset optimizer state  #todo: clean and re-use the optimizer creation code
+        # reset optimizer state
         del optimizers
         optimizers = get_optimizers(model, nconfig, raw_model)
 
@@ -318,56 +314,3 @@ for step in range(nconfig.num_iterations + 1):
 print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
 print0("Training complete.")
 dist.destroy_process_group()
-
-# ====================================== SCORER ======================================
-if nconfig.is_scorer and master_process:
-    train_loader.reset(shard=0)
-    run_id = nconfig.run_name + '_' + str(uuid.uuid4().hex[:8])
-    data_dir = f"data/{run_id}/"
-    os.makedirs(data_dir, exist_ok=True)
-
-    shard_losses = []
-    last_shard = train_loader.current_shard
-    while train_loader.current_shard < int(tokens_to_skip/tokens_per_shard):
-        x, y, _ = train_loader.next_batch()
-        with ctx:
-            loss = raw_model(x, targets=y)
-            shard_losses.append(loss.detach().item()) # (B, T)
-        
-        if train_loader.current_shard != last_shard:
-            shard_file = f"{data_dir}/shard_{last_shard:03d}.bin"
-            with open(shard_file, "wb") as f:
-                np.array(shard_losses, dtype=np.float32).tofile(f)
-            print0(f"Saved shard losses to {shard_file}")
-            shard_losses = []
-            last_shard = train_loader.current_shard
-
-    if shard_losses:
-        shard_file = f"{data_dir}/shard_{last_shard:03d}.bin"
-        with open(shard_file, "wb") as f:
-            np.array(shard_losses, dtype=np.float32).tofile(f)
-        print0(f"Saved shard losses to {shard_file}")
-
-# ====================================== EVAL - BENCHMARKS ======================================
-if nconfig.eval_benchmarks and master_process:
-    from eval import eval_benchmarks
-
-    print0(f"Evaluating on tasks: {nconfig.eval_benchmarks_tasks}.")
-    results = eval_benchmarks(logdir, raw_model, nconfig.eval_tokenizer_path)
-    print0("Done evaluating benchmarks.")
-
-    # log to wandb
-    for task, result in results['results'].items():
-        task_name = result.get('alias')
-        acc = result.get('acc,none')
-        acc_norm = result.get('acc,norm')
-        # WARNING: could cause problem with tasks that have an accuracy attribute in their results
-        
-        wandb.log({"eval/"+task_name+"_acc": acc, "eval/"+task_name+"_acc_norm": acc_norm}, step=nconfig.num_iterations)
-
-# ====================================== EVAL - LONG-CONTEXT PG19 ======================================
-if nconfig.evalpg19 and master_process:
-    from eval_pg19 import eval_pg19
-    
-    eval_pg19(logdir, raw_model, nconfig.evalpg19_num_samples, nconfig.evalpg19_ctx_len, nconfig.evalpg19_batch_size, log_wandb=True)
-    print0("Done evaluating PG19.")
