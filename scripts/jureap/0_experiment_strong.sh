@@ -55,8 +55,6 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --vocab_size 50304 \
     --input_bin '/p/project1/jureap140/nanoGPT/data/fineweb10B/fineweb_train_*.bin' \
     --input_val_bin '/p/project1/jureap140/nanoGPT/data/fineweb10B/fineweb_val_*.bin' \
-    --val_loss_every 250 \
-    --val_tokens 10002432 \
     --save_every 10000 \
     --eval_benchmarks_tasks 'hellaswag,swde,fda' \
     --eval_benchmarks \

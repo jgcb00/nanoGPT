@@ -81,18 +81,15 @@ if nconfig.use_patch_level_training:
 
 # convenience variables
 B, T = nconfig.device_batch_size, nconfig.sequence_length
-# calculate the number of steps to take in the val loop.
-assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
-val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
 # calculate the steps of gradient accumulation required to attain the desired global batch size.
 assert nconfig.batch_size % (B * ddp_world_size) == 0
 train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
 
+# TODO: compute B from world_size and batch size, adjust...
+
 # load tokens
 train_loader = DistributedDataLoader(nconfig.input_bin, B, T, ddp_rank, ddp_world_size, score_pattern=nconfig.scoring_bin)
-val_loader = DistributedDataLoader(nconfig.input_val_bin, B, T, ddp_rank, ddp_world_size)
 print0(f"Training DataLoader: total number of tokens: {train_loader.ntok_total} across {len(train_loader.files)} files")
-print0(f"Validation DataLoader: total number of tokens: {val_loader.ntok_total} across {len(val_loader.files)} files")
 x, y, scores = train_loader.next_batch()
 
 # there are only 50257 unique GPT-2 tokens; we extend to nearest multiple of 128 for efficiency. suggested to me by @Grad62304977.
@@ -117,10 +114,6 @@ ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 optimizers = get_optimizers(model, nconfig, raw_model)
 schedulers = get_schedulers(optimizers, nconfig)
 
-# begin wandb logging
-if master_process:
-    wandb.init(project='nanoGPT', name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
-
 training_time_ms = 0
 # start the clock
 torch.cuda.synchronize()
@@ -139,18 +132,6 @@ if nconfig.setup_only:
     dist.destroy_process_group()
     sys.exit()
 
-wsize = 0
-if nconfig.local_attn_type == "metatokens":
-    wsize = nconfig.swa_window_size
-    def attn_mask(b, h, q_idx, kv_idx):
-        causal = q_idx >= kv_idx
-        swa = q_idx - kv_idx <= wsize
-        prefix = kv_idx < nconfig.num_meta_tokens
-        return causal & (swa | prefix)
-    block_mask_local = create_block_mask(attn_mask, B=None, H=None, Q_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, KV_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, _compile=True)
-    for block in raw_model.transformer.h:
-        block.attn.block_mask = block_mask_local
-
 for step in range(nconfig.num_iterations + 1):
     last_step = (step == nconfig.num_iterations)
     # This effectively ignores timing first 10 steps, which are slower for weird reasons.
@@ -160,69 +141,6 @@ for step in range(nconfig.num_iterations + 1):
         training_time_ms = 0
         t0 = time.time()
     timed_steps = float('nan') if step-reset_step <= 11 else (step - reset_step) + 1 # <= to avoid bug in val
-
-    # update the window size, following SkyLadder (https://arxiv.org/abs/2503.15450)
-    if nconfig.model in ["gpt", "dragon"] and nconfig.slw_warmup_iters > 0:
-        wsize_old = wsize
-
-        slw_warmup_iters = int(nconfig.slw_warmup_iters * nconfig.num_iterations)
-
-        progress_ratio = step / slw_warmup_iters
-        window = nconfig.slw_start + progress_ratio * (nconfig.sequence_length - nconfig.slw_start)
-        window = nconfig.slw_increment * math.ceil(window / nconfig.slw_increment) # quantize
-        window = int(min(window, nconfig.sequence_length)) # cap
-        nconfig.slw_window = window
-
-        if nconfig.local_attn_type == "metatokens":
-            wsize = min(nconfig.slw_window, nconfig.swa_window_size)
-
-            if wsize != wsize_old:
-                def attn_mask(b, h, q_idx, kv_idx):
-                    causal = q_idx >= kv_idx
-                    swa = q_idx - kv_idx <= wsize
-                    prefix = kv_idx < nconfig.num_meta_tokens
-                    return causal & (swa | prefix)
-                block_mask_local = create_block_mask(attn_mask, B=None, H=None, Q_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, KV_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, _compile=True)
-
-                for block in raw_model.transformer.h:
-                    block.attn.block_mask = block_mask_local
-
-    # --------------- VALIDATION SECTION -----------------
-    if (last_step or (nconfig.val_loss_every > 0 and step % nconfig.val_loss_every == 0)):
-        # stop the clock
-        torch.cuda.synchronize()
-        training_time_ms += 1000 * (time.time() - t0)
-        avg_step_time = training_time_ms / (timed_steps-1)
-        # run validation batches
-        model.eval()
-        val_loader.reset()
-        val_loss = 0.0
-        for _ in range(val_steps):
-            x_val, y_val, _ = val_loader.next_batch()
-            with ctx: # of course, we'd like to use no_grad() here too, but that creates a torch.compile error for some reason
-                loss = model(x_val, targets=y_val)
-                val_loss += loss.detach()
-                del loss
-        dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
-        val_loss /= val_steps
-        # log val loss
-        print0(f'step:{step}/{nconfig.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{avg_step_time:.2f}ms')
-        if master_process:
-            wandb.log({'val_loss': val_loss}, step=step)
-        # start the clock again
-        torch.cuda.synchronize()
-        t0 = time.time()
-
-    if master_process and (last_step or (nconfig.save_every > 0 and step % nconfig.save_every == 0)):
-        # stop the clock
-        torch.cuda.synchronize()
-        training_time_ms += 1000 * (time.time() - t0)
-        # save the state of the training process
-        log = dict(step=step, code=code, model=raw_model.state_dict(), optimizers=[opt.state_dict() for opt in optimizers])
-        torch.save(log, 'logs/%s/state_step%06d.pt' % (run_id, step))
-        # start the clock again
-        torch.cuda.synchronize()
-        t0 = time.time()
 
     # bit confusing: we want to make sure to eval on 0th iteration
     # but also after the very last iteration. so we loop for step <= num_iterations
@@ -263,56 +181,6 @@ for step in range(nconfig.num_iterations + 1):
     approx_time = training_time_ms + 1000 * (time.time() - t0)
     avg_step_time = approx_time / timed_steps
     print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} lr: {schedulers[0].get_last_lr()[0]:.4f} slw_window: {nconfig.slw_window} current_step_time:{approx_time:.0f}ms step_avg:{avg_step_time:.2f}ms")
-    if master_process:
-        wandb.log({'train_loss': train_loss.item(), 'step_avg_time': avg_step_time, **{f'lr_{i}': sched.get_last_lr()[0] for i, sched in enumerate(schedulers)}, 'slw_window': nconfig.slw_window, 'grad_norm': grad_norm.item()}, step=step)
-
-    # monitor patch/token-level training
-    if nconfig.use_patch_level_training and step > nconfig.patch_training_fraction*nconfig.num_iterations:
-        print0("Switching to token-level training.")
-        nconfig.use_patch_level_training = False
-
-        # stop the clock
-        torch.cuda.synchronize()
-        training_time_ms += 1000 * (time.time() - t0)
-
-        # reset any stateful layers
-        model.eval()
-        model.train()
-
-        # fallback to the original device batch size
-        nconfig.device_batch_size = prev_device_batch_size
-        B, T = nconfig.device_batch_size, nconfig.sequence_length
-        assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
-        val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
-        assert nconfig.batch_size % (B * ddp_world_size) == 0
-        train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
-
-        # recompute current_position in the data loaders (we dont interrupt the stream of tokens this way)
-        current_pos = train_loader.current_position - train_loader.process_rank * train_loader.B * T # same on each rank
-        train_loader.B = B
-        train_loader.current_position = current_pos + train_loader.process_rank * train_loader.B * T
-        current_pos = val_loader.current_position - val_loader.process_rank * val_loader.B * T # same on each rank
-        val_loader.B = B
-        val_loader.current_position = current_pos + val_loader.process_rank * val_loader.B * T
-
-        # get the next batch (erase the prev one that used the older B)
-        x, y, scores = train_loader.next_batch()
-
-        # reset optimizer state
-        del optimizers
-        optimizers = get_optimizers(model, nconfig, raw_model)
-
-        # reset the learning rate scheduler (update the step count for each scheduler to match the current training progress)
-        del schedulers
-        schedulers = get_schedulers(optimizers, nconfig, out_of_patch_level=True)
-
-        # start the clock again (we will have a new step_avg)
-        training_time_ms = 0
-        torch.cuda.synchronize()
-        t0 = time.time()
-        reset_step = step+1
-
-        torch.cuda.empty_cache()
 
 print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
 print0("Training complete.")

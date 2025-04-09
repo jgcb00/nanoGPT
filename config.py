@@ -83,12 +83,6 @@ class NanoConfig:
     # scoring
     scoring_bin: Union[str, None] = None # input .bin
     scores_loss_coupling: str = "sqrt" # sqrt, soft-rho1
-    
-    # evaluation and logging
-    val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
-    val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
-    save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
-    log_wandb : bool = False # whether to log to wandb
 
     # special - for scores
     is_scorer: bool = False # whether to use the model as a scorer (tied input+output, shifted data by 10B, will evaluate the first 10B tokens)
