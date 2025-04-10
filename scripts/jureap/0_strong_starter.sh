@@ -1,5 +1,6 @@
 #!/bin/bash
 
+module load GCCcore/.13.3.0
 module load Python NVHPC
 source build/venv/bin/activate # created during the build phase of the JUBE script
 
