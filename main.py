@@ -7,7 +7,7 @@ random_sleep = random.random() * 5
 time.sleep(random_sleep)
 
 import os
-import tyro
+#import tyro
 import math
 import torch
 import torch.distributed as dist
