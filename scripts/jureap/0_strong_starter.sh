@@ -47,5 +47,5 @@ torchrun ${DISTRIBUTED_ARGS[@]} build/fetch/nanoGPT/main.py \
     --weight_decay 0.1 \
     --sequence_length 4736 \
     --vocab_size 50304 \
-    --input_bin '/p/project1/jureap140/nanoGPT/data/fineweb10B/fineweb_train_*.bin' \
-    --input_val_bin '/p/project1/jureap140/nanoGPT/data/fineweb10B/fineweb_val_*.bin' \
+    --input_bin 'build/fetch/nanoGPT/data/fineweb10B/fineweb_train_*.bin' \
+    --input_val_bin 'build/fetch/nanoGPT/data/fineweb10B/fineweb_val_*.bin' \
