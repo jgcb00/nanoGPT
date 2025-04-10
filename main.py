@@ -108,7 +108,7 @@ else:
 if nconfig.setup_only:
     et = time.time()
     runtime = et - st
-    print(f"Runtime: {runtime}") # print or print0 ?
+    print0(f"Runtime: {runtime}")
     dist.destroy_process_group()
     sys.exit()
 
@@ -167,6 +167,6 @@ print0("Training complete.")
 
 et = time.time()
 runtime = et - st
-print(f"Runtime: {runtime}")
+print0(f"Runtime: {runtime}")
 
 dist.destroy_process_group()

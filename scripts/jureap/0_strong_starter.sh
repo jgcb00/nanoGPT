@@ -1,7 +1,5 @@
 #!/bin/bash
 
-echo "Runninnnnnng"
-
 module load Python NVHPC
 source build/venv/bin/activate # created during the build phase of the JUBE script
 
@@ -22,8 +20,6 @@ DISTRIBUTED_ARGS=(
     --rdzv_endpoint $MASTER_ADDR:29500
     --rdzv_backend c10d
 )
-
-echo "Let's goooooooo"
 
 torchrun ${DISTRIBUTED_ARGS[@]} build/fetch/nanoGPT/main.py \
     --run_name dragon-L-adamw \
