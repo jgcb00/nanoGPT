@@ -27,7 +27,7 @@ DISTRIBUTED_ARGS=(
     --master_addr $MASTER_ADDR
     --master_port $MASTER_PORT
     --rdzv_id $SLURM_JOB_ID
-    --rdzv_endpoint $MASTER_ADDR:29500
+    --rdzv_endpoint "$MASTER_ADDR":"$MASTER_PORT"
     --rdzv_backend c10d
 )
 
