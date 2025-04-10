@@ -1,22 +1,22 @@
-import itertools
-import os
 import sys
-import tyro
-import argparse
-with open(sys.argv[0]) as f:
-    code = f.read() # read the code of this file ASAP, for logging
-import uuid
-import glob
 import time
-import json
-import pickle
-import wandb
+st = time.time()
 
+import random
+random_sleep = random.random() * 5
+time.sleep(random_sleep)
+
+et = time.time()
+runtime = et - st
+print(f"Runtime: {runtime}")
+sys.exit()
+
+import os
+import tyro
 import math
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.nn.attention.flex_attention import create_block_mask
 from arch.utils import get_model
 from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
@@ -43,25 +43,11 @@ print(f"using device: {device}")
 master_process = (ddp_rank == 0) # this process will do logging, checkpointing etc.
 torch._dynamo.config.optimize_ddp=False
 
-logfile = None
-if master_process:
-    run_id = nconfig.run_name + '_' + str(uuid.uuid4().hex[:8])
-    logdir = 'logs/%s/' % run_id
-    os.makedirs(logdir, exist_ok=True)
-    with open(f'{logdir}/config.json', 'w') as f:
-        json.dump(vars(nconfig), f)
-    with open(f'{logdir}/config.pkl', 'wb') as f:
-        pickle.dump(nconfig, f)
-    logfile = 'logs/%s.txt' % run_id
-    print(logfile)
 def print0(s, console=True):
-    if master_process:
-        with open(logfile, "a") as f:
-            if console:
-                print(s)
-            print(s, file=f)
+    if master_process:    
+        if console:
+            print(s)
 # log current code + versions + config
-print0(code, console=False)
 print0('='*100, console=False)
 print0(f"Running Python {sys.version}")
 print0(f"Running pytorch {torch.version.__version__} compiled for CUDA {torch.version.cuda}")
@@ -73,19 +59,11 @@ print0("="*100)
 print0(nconfig)
 print0("="*100)
 
-if nconfig.use_patch_level_training:
-    prev_device_batch_size = nconfig.device_batch_size
-    prev_train_accumulation_steps = nconfig.batch_size // (prev_device_batch_size * ddp_world_size)
-    nconfig.device_batch_size = min(nconfig.patch_size, prev_train_accumulation_steps) * prev_device_batch_size
-    print0(f"Using patch-level training. Modifying the device batch size to account for the patch size, from {prev_device_batch_size} to {nconfig.device_batch_size}.")
-
 # convenience variables
 B, T = nconfig.device_batch_size, nconfig.sequence_length
 # calculate the steps of gradient accumulation required to attain the desired global batch size.
 assert nconfig.batch_size % (B * ddp_world_size) == 0
 train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
-
-# TODO: compute B from world_size and batch size, adjust...
 
 # load tokens
 train_loader = DistributedDataLoader(nconfig.input_bin, B, T, ddp_rank, ddp_world_size, score_pattern=nconfig.scoring_bin)
@@ -128,7 +106,9 @@ else:
     train_loader.reset()
 
 if nconfig.setup_only:
-    print0("Setup only mode. Exiting.")
+    et = time.time()
+    runtime = et - st
+    print(f"Runtime: {runtime}") # print or print0 ?
     dist.destroy_process_group()
     sys.exit()
 
@@ -184,4 +164,9 @@ for step in range(nconfig.num_iterations + 1):
 
 print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
 print0("Training complete.")
+
+et = time.time()
+runtime = et - st
+print(f"Runtime: {runtime}")
+
 dist.destroy_process_group()
