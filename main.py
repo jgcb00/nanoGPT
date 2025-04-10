@@ -12,6 +12,12 @@ import math
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
+
+et = time.time()
+runtime = et - st
+print(f"Runtime: {runtime}")
+sys.exit()
+
 """
 from arch.utils import get_model
 from config import NanoConfig
@@ -39,11 +45,6 @@ torch.cuda.set_device(device)
 #print(f"using device: {device}")
 master_process = (ddp_rank == 0) # this process will do logging, checkpointing etc.
 torch._dynamo.config.optimize_ddp=False
-
-et = time.time()
-runtime = et - st
-print(f"Runtime: {runtime}")
-sys.exit()
 
 def print0(s, console=True):
     if master_process:    
