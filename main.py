@@ -111,6 +111,8 @@ if nconfig.setup_only:
     print0(f"Runtime: {runtime}")
     dist.destroy_process_group()
     sys.exit()
+else:
+    st = time.time()
 
 for step in range(nconfig.num_iterations + 1):
     last_step = (step == nconfig.num_iterations)
