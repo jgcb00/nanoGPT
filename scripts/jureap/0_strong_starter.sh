@@ -12,6 +12,9 @@ MASTER_PORT=48994
 NUM_NODES=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l)
 WORLD_SIZE=$(($GPUS_PER_NODE*$NUM_NODES))
 
+echo "gooooo"
+echo $MASTER_ADDR
+
 DISTRIBUTED_ARGS=(
     --nproc_per_node $GPUS_PER_NODE
     --nnodes $NUM_NODES
