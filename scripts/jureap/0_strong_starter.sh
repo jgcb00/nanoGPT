@@ -6,7 +6,7 @@ source build/venv/bin/activate # created during the build phase of the JUBE scri
 
 # to make compatible with JUBE, remove the #SBATCH lines, the "module" and "source" directions, as well as the "srun"
 
-GPUS_PER_NODE=4
+GPUS_PER_NODE=1
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 MASTER_PORT=48994
 NUM_NODES=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l)

@@ -19,7 +19,6 @@ from arch.data.distributed_data_loader import DistributedDataLoader
 from arch.optim.get_optimizer import get_optimizers
 from arch.schedulers import get_schedulers
 
-
 nconfig = tyro.cli(NanoConfig)
 assert nconfig.run_name != "", "Please provide a run name for this training run."
 """
