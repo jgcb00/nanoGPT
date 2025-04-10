@@ -17,7 +17,7 @@ if [ "$SYSTEMNAME" = juwelsbooster ] \
     # Allow communication over InfiniBand cells on JSC machines.
     MASTER_ADDR="$MASTER_ADDR"i
 fi
-export MASTER_PORT=54123
+export MASTER_PORT=54125
 export NCCL_SOCKET_IFNAME=ib0 # Prevent NCCL not figuring out how to initialize.
 export GLOO_SOCKET_IFNAME=ib0 # Prevent Gloo not being able to communicate.
 
