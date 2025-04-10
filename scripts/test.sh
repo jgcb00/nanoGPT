@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=01:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/eval4.err            # standard error file
-#SBATCH --output=logs/eval4.out           # standard output file
+#SBATCH --error=logs/eval10.err            # standard error file
+#SBATCH --output=logs/eval10.out           # standard output file
 #SBATCH --account=jureap140       # account name
 #SBATCH --partition=dc-gpu # partition name for prod
 
@@ -13,21 +13,20 @@ module load GCCcore/.13.3.0
 module load Python NVHPC
 source venv/bin/activate
 
-# to make compatible with JUBE, remove the #SBATCH lines, the "module" and "source" directions, as well as the "srun"
+# to make compatible with JUBE, remove the #SBATCH lines as well as the "srun"
 
-GPUS_PER_NODE=1
+GPUS_PER_NODE=4
 NUM_NODES=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l)
 WORLD_SIZE=$(($GPUS_PER_NODE*$NUM_NODES))
-
 export MASTER_ADDR="$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)"
-# Allow communication over InfiniBand cells on JSC machines.
 if [ "$SYSTEMNAME" = juwelsbooster ] \
        || [ "$SYSTEMNAME" = juwels ] \
        || [ "$SYSTEMNAME" = jurecadc ] \
        || [ "$SYSTEMNAME" = jusuf ]; then
+    # Allow communication over InfiniBand cells on JSC machines.
     MASTER_ADDR="$MASTER_ADDR"i
 fi
-export MASTER_PORT=54123
+export MASTER_PORT=54125
 export NCCL_SOCKET_IFNAME=ib0 # Prevent NCCL not figuring out how to initialize.
 export GLOO_SOCKET_IFNAME=ib0 # Prevent Gloo not being able to communicate.
 
@@ -41,7 +40,7 @@ DISTRIBUTED_ARGS=(
     --rdzv_backend c10d
 )
 
-srun env -u CUDA_VISIBLE_DEVICES python -u -m torchrun_jsc ${DISTRIBUTED_ARGS[@]} main.py \
+srun torchrun_jsc ${DISTRIBUTED_ARGS[@]} main.py \
     --run_name dragon-L-adamw \
     --no-setup_only \
     --model dragon \

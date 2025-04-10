@@ -4,7 +4,7 @@ module load GCCcore/.13.3.0
 module load Python NVHPC
 source build/venv/bin/activate # created during the build phase of the JUBE script
 
-# to make compatible with JUBE, remove the #SBATCH lines, the "module" and "source" directions, as well as the "srun"
+# to make compatible with JUBE, remove the #SBATCH lines as well as the "srun"
 
 GPUS_PER_NODE=4
 NUM_NODES=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l)
