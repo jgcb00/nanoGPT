@@ -6,11 +6,6 @@ import random
 random_sleep = random.random() * 5
 time.sleep(random_sleep)
 
-et = time.time()
-runtime = et - st
-print(f"Runtime: {runtime}")
-sys.exit()
-
 import os
 import tyro
 import math
@@ -42,6 +37,11 @@ torch.cuda.set_device(device)
 print(f"using device: {device}")
 master_process = (ddp_rank == 0) # this process will do logging, checkpointing etc.
 torch._dynamo.config.optimize_ddp=False
+
+et = time.time()
+runtime = et - st
+print(f"Runtime: {runtime}")
+sys.exit()
 
 def print0(s, console=True):
     if master_process:    
