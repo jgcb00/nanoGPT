@@ -3,7 +3,7 @@
 echo "Runninnnnnng"
 
 module load Python NVHPC
-source /p/project1/jureap140/venv/bin/activate # created during the build phase of the JUBE script
+source build/venv/bin/activate # created during the build phase of the JUBE script
 
 # to make compatible with JUBE, remove the #SBATCH lines, the "module" and "source" directions, as well as the "srun"
 
@@ -25,7 +25,7 @@ DISTRIBUTED_ARGS=(
 
 echo "Let's goooooooo"
 
-torchrun ${DISTRIBUTED_ARGS[@]} main.py \
+torchrun ${DISTRIBUTED_ARGS[@]} build/fetch/nanoGPT/main.py \
     --run_name dragon-L-adamw \
     --no-setup_only \
     --model dragon \
