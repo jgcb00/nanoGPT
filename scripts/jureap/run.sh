@@ -20,12 +20,6 @@ fi
 MODEL_SIZE=$1
 SETUP_MODE=${2:-strong}
 
-if [ "$SETUP_MODE" = "weak" ]; then
-    SETUP_FLAG="--setup_only"
-else
-    SETUP_FLAG="--no-setup_only"
-fi
-
 NUM_ITERS=20
 
 case $MODEL_SIZE in
@@ -74,6 +68,18 @@ case $MODEL_SIZE in
         echo "Available model sizes: tiny, small, medium"
         exit 1
         ;;
+esac
+
+case "$SETUP_MODE" in
+  weak)
+    SETUP_FLAG="--setup_only"
+    ;;
+  full)
+    BATCH_SIZE=28800
+    SETUP_FLAG="--no-setup_only"
+    ;;
+  *)
+    SETUP_FLAG="--no-setup_only" # strong and single
 esac
 
 module load GCCcore/.13.3.0
