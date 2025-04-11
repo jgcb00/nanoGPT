@@ -130,7 +130,7 @@ srun torchrun_jsc ${DISTRIBUTED_ARGS[@]} main.py \
     --use_kv_sharing \
     --use_swa \
     --no-qk-norm \
-    --attn_type diff \
+    --attn_type normal \
     --lin_attn_type gdn \
     --expand_factor 2 \
     --layer-norm-scaling \
