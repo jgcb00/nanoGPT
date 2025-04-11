@@ -2,10 +2,6 @@ import sys
 import time
 st = time.time()
 
-import random
-random_sleep = random.random() * 5
-time.sleep(random_sleep)
-
 import os
 import tyro
 import math
@@ -13,12 +9,6 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-et = time.time()
-runtime = et - st
-print(f"Runtime: {runtime}")
-sys.exit()
-
-"""
 from arch.utils import get_model
 from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
@@ -27,7 +17,6 @@ from arch.schedulers import get_schedulers
 
 nconfig = tyro.cli(NanoConfig)
 assert nconfig.run_name != "", "Please provide a run name for this training run."
-"""
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
@@ -51,16 +40,16 @@ def print0(s, console=True):
         if console:
             print(s)
 # log current code + versions + config
-print0('='*100, console=False)
-print0(f"Running Python {sys.version}")
-print0(f"Running pytorch {torch.version.__version__} compiled for CUDA {torch.version.cuda}")
+#print0('='*100, console=False)
+#print0(f"Running Python {sys.version}")
+#print0(f"Running pytorch {torch.version.__version__} compiled for CUDA {torch.version.cuda}")
 def nvidia_smi():
     import subprocess  # avoid top level import
     return subprocess.run(["nvidia-smi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True).stdout
-print0(nvidia_smi(), console=False)
-print0("="*100)
-print0(nconfig)
-print0("="*100)
+#print0(nvidia_smi(), console=False)
+#print0("="*100)
+#print0(nconfig)
+#print0("="*100)
 
 # convenience variables
 B, T = nconfig.device_batch_size, nconfig.sequence_length
@@ -70,7 +59,7 @@ train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
 
 # load tokens
 train_loader = DistributedDataLoader(nconfig.input_bin, B, T, ddp_rank, ddp_world_size, score_pattern=nconfig.scoring_bin)
-print0(f"Training DataLoader: total number of tokens: {train_loader.ntok_total} across {len(train_loader.files)} files")
+#print0(f"Training DataLoader: total number of tokens: {train_loader.ntok_total} across {len(train_loader.files)} files")
 x, y, scores = train_loader.next_batch()
 
 # there are only 50257 unique GPT-2 tokens; we extend to nearest multiple of 128 for efficiency. suggested to me by @Grad62304977.
@@ -79,13 +68,13 @@ num_vocab = 50304
 model = get_model(nconfig)
 #count parameters
 num_params = sum(p.numel() for p in model.parameters())
-print0(f"number of parameters: {num_params}")
+#print0(f"number of parameters: {num_params}")
 nconfig.num_params = num_params
 model = model.to(torch.bfloat16)
 model = torch.compile(model, dynamic=False)
 model = model.cuda()
 
-print0(model)
+#print0(model)
 
 # here we wrap model into DDP container
 model = DDP(model, device_ids=[ddp_local_rank])
@@ -114,26 +103,23 @@ if nconfig.setup_only:
     print0(f"Runtime: {runtime}")
     dist.destroy_process_group()
     sys.exit()
-else:
-    st = time.time()
 
-for step in range(nconfig.num_iterations + 1):
-    last_step = (step == nconfig.num_iterations)
-    # This effectively ignores timing first 10 steps, which are slower for weird reasons.
-    # Alternately, and slightly more correctly in terms of benchmarking, we could do 10
-    # steps with dummy data first, and then re-initialize the model and reset the loader.
-    if step == reset_step:
-        training_time_ms = 0
-        t0 = time.time()
-    timed_steps = float('nan') if step-reset_step <= 11 else (step - reset_step) + 1 # <= to avoid bug in val
+# warmup the training kernels
+warmup_steps = 10
+for _ in range(warmup_steps):
+    inputs = targets = torch.randint(0, nconfig.vocab_size, size=(B, nconfig.sequence_length), device="cuda")
+    with ctx:
+        model(inputs.to(torch.int32), targets=targets).backward()
+    for param in model.parameters():
+        dist.all_reduce(param.grad, op=dist.ReduceOp.AVG)
+    for opt in optimizers:
+        opt.step()
+    model.zero_grad(set_to_none=True)
 
-    # bit confusing: we want to make sure to eval on 0th iteration
-    # but also after the very last iteration. so we loop for step <= num_iterations
-    # instead of just < num_iterations (one extra due to <=), only to do
-    # the validation/sampling one last time, and then we break right here as we're done.
-    if last_step:
-        break
+t0 = time.time()
+st = time.time()
 
+for step in range(nconfig.num_iterations):
     # --------------- TRAINING SECTION -----------------
     model.train()
     for i in range(1, train_accumulation_steps+1):
@@ -164,11 +150,11 @@ for step in range(nconfig.num_iterations + 1):
 
     #dist.all_reduce(train_loss, op=dist.ReduceOp.AVG) # all-reducing the training loss would be more correct in terms of logging, but slower
     approx_time = training_time_ms + 1000 * (time.time() - t0)
-    avg_step_time = approx_time / timed_steps
-    print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} lr: {schedulers[0].get_last_lr()[0]:.4f} slw_window: {nconfig.slw_window} current_step_time:{approx_time:.0f}ms step_avg:{avg_step_time:.2f}ms")
+    avg_step_time = approx_time / (step+1)
+    #print0(f"step:{step+1}/{nconfig.num_iterations} train_loss:{train_loss.item():.4f} lr: {schedulers[0].get_last_lr()[0]:.4f} slw_window: {nconfig.slw_window} current_step_time:{approx_time:.0f}ms step_avg:{avg_step_time:.2f}ms")
+    #print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
 
-print0(f"peak memory consumption during training: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
-print0("Training complete.")
+#print0("Training complete.")
 
 et = time.time()
 runtime = et - st

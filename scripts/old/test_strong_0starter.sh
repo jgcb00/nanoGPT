@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=01:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/eval10.err            # standard error file
-#SBATCH --output=logs/eval10.out           # standard output file
+#SBATCH --error=logs/0starter.err            # standard error file
+#SBATCH --output=logs/0starter.out           # standard output file
 #SBATCH --account=jureap140       # account name
 #SBATCH --partition=dc-gpu # partition name for prod
 
@@ -13,7 +13,9 @@ module load GCCcore/.13.3.0
 module load Python NVHPC
 source venv/bin/activate
 
-# to make compatible with JUBE, remove the #SBATCH lines as well as the "srun"
+# to make compatible with JUBE: 
+# -remove the #SBATCH lines as well as the "srun"
+# -change dir of main.py and data files
 
 GPUS_PER_NODE=4
 NUM_NODES=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l)
@@ -57,8 +59,8 @@ srun torchrun_jsc ${DISTRIBUTED_ARGS[@]} main.py \
     --layer-norm-scaling \
     --scalable_softmax \
     --optim adamw \
-    --batch_size 256 \
-    --device_batch_size 8 \
+    --batch_size 512 \
+    --device_batch_size 16 \
     --learning_rate 9.7e-4 \
     --num_iterations 400 \
     --warmup_iters 0.0045 \
@@ -66,5 +68,5 @@ srun torchrun_jsc ${DISTRIBUTED_ARGS[@]} main.py \
     --weight_decay 0.1 \
     --sequence_length 4736 \
     --vocab_size 50304 \
-    --input_bin 'build/fetch/nanoGPT/data/fineweb10B/fineweb_train_*.bin' \
-    --input_val_bin 'build/fetch/nanoGPT/data/fineweb10B/fineweb_val_*.bin' \
+    --input_bin 'data/fineweb10B/fineweb_train_*.bin' \
+    --input_val_bin 'data/fineweb10B/fineweb_val_*.bin' \

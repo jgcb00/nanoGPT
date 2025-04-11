@@ -1,8 +1,17 @@
 #!/bin/bash
+#SBATCH --nodes=1           # number of nodes
+#SBATCH --ntasks-per-node=1 # number of tasks per node
+#SBATCH --cpus-per-task=32
+#SBATCH --gres=gpu:4         # number of gpus per node
+#SBATCH --time=01:00:00              # time limits: here 1 hour
+#SBATCH --error=logs/1tiny.err            # standard error file
+#SBATCH --output=logs/1tiny.out           # standard output file
+#SBATCH --account=jureap140       # account name
+#SBATCH --partition=dc-gpu # partition name for prod
 
 module load GCCcore/.13.3.0
 module load Python NVHPC
-source build/venv/bin/activate # created during the build phase of the JUBE script
+source venv/bin/activate
 
 # to make compatible with JUBE, remove the #SBATCH lines as well as the "srun"
 
@@ -31,14 +40,14 @@ DISTRIBUTED_ARGS=(
     --rdzv_backend c10d
 )
 
-torchrun_jsc ${DISTRIBUTED_ARGS[@]} build/fetch/nanoGPT/main.py \
+srun torchrun_jsc ${DISTRIBUTED_ARGS[@]} main.py \
     --run_name dragon-L-adamw \
     --no-setup_only \
     --model dragon \
-    --d_model 512 \
-    --n_heads 16 \
-    --n_kv_heads 8 \
-    --n_layers 8 \
+    --d_model 768 \
+    --n_heads 12 \
+    --n_kv_heads 6 \
+    --n_layers 12 \
     --use_kv_sharing \
     --use_swa \
     --no-qk-norm \
@@ -48,14 +57,14 @@ torchrun_jsc ${DISTRIBUTED_ARGS[@]} build/fetch/nanoGPT/main.py \
     --layer-norm-scaling \
     --scalable_softmax \
     --optim adamw \
-    --batch_size 256 \
-    --device_batch_size 8 \
+    --batch_size 512 \
+    --device_batch_size 2 \
     --learning_rate 9.7e-4 \
     --num_iterations 400 \
     --warmup_iters 0.0045 \
     --warmdown_iters 0.15 \
     --weight_decay 0.1 \
-    --sequence_length 4736 \
+    --sequence_length 18432 \
     --vocab_size 50304 \
-    --input_bin 'build/fetch/nanoGPT/data/fineweb10B/fineweb_train_*.bin' \
-    --input_val_bin 'build/fetch/nanoGPT/data/fineweb10B/fineweb_val_*.bin' \
+    --input_bin 'data/fineweb10B/fineweb_train_*.bin' \
+    --input_val_bin 'data/fineweb10B/fineweb_val_*.bin' \
