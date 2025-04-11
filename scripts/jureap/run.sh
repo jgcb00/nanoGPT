@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # example of calling:
-# sbatch test_run.sh small weak
+# srun run.sh small weak
 
 # to make compatible with JUBE: 
 # -remove the #SBATCH lines as well as the "srun"
