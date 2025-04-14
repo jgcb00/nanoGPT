@@ -46,7 +46,7 @@ case $MODEL_SIZE in
         DEVICE_BATCH_SIZE=8
         BATCH_SIZE=512
         SEQUENCE_LENGTH=4736
-        LOG_PREFIX="0stater"
+        LOG_PREFIX="0starter"
         ;;
     tiny)
         D_MODEL=768
