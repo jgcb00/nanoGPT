@@ -4,8 +4,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from fla.modules import FusedLinearCrossEntropyLoss, FusedCrossEntropyLoss
-from cut_cross_entropy import linear_cross_entropy
+try:
+    from fla.modules import FusedLinearCrossEntropyLoss, FusedCrossEntropyLoss
+except ImportError:
+    FusedLinearCrossEntropyLoss, FusedCrossEntropyLoss = None, None
+
+try:
+    from cut_cross_entropy import linear_cross_entropy
+except:
+    linear_cross_entropy = None    
 
 from config import NanoConfig
 from arch.mlp import MLP
