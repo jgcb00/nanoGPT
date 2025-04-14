@@ -1,9 +1,19 @@
 #!/bin/bash
+#SBATCH --nodes=1           # number of nodes
+#SBATCH --ntasks-per-node=1 # number of tasks per node
+#SBATCH --cpus-per-task=32
+#SBATCH --gres=gpu:4         # number of gpus per node
+#SBATCH --time=01:00:00              # time limits: here 1 hour
+#SBATCH --error=logs/test_run2.err            # standard error file
+#SBATCH --output=logs/test_run2.out           # standard output file
+#SBATCH --account=jureap140       # account name
+#SBATCH --partition=all # partition name for prod
 
 # example of calling:
 # sbatch test_run.sh small weak
 
-# to make compatible with JUBE: 
+# to make compatible with JUBE:
+# -remove the #SBATCH lines as well as the "srun"
 # -change dir of virtual env, main.py and data files
 # -remove logs/ creation, echos
 
@@ -82,9 +92,10 @@ esac
 
 # JEDI
 module load GCC && module load Python/3.12.3 && module load NVHPC
-source venv/bin/activate
+source ../venv/bin/activate
+export TRITON_HOME="$FSCRATCH"
 
-GPUS_PER_NODE=1
+GPUS_PER_NODE=4
 NUM_NODES=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l)
 WORLD_SIZE=$(($GPUS_PER_NODE*$NUM_NODES))
 export MASTER_ADDR="$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)"
@@ -100,6 +111,12 @@ export GLOO_SOCKET_IFNAME=ib0 # prevent Gloo not being able to communicate.
 
 DISTRIBUTED_ARGS=(
     --nproc_per_node $GPUS_PER_NODE
+    --nnodes $NUM_NODES
+    --master_addr $MASTER_ADDR
+    --master_port $MASTER_PORT
+    --rdzv_id $SLURM_JOB_ID
+    --rdzv_endpoint "$MASTER_ADDR":"$MASTER_PORT"
+    --rdzv_backend c10d
 )
 
 mkdir -p logs
@@ -108,7 +125,7 @@ echo "Running with model size: $MODEL_SIZE, Setup mode: $SETUP_MODE" | tee -a $S
 echo "Configuration: d_model=$D_MODEL, n_heads=$N_HEADS, n_kv_heads=$N_KV_HEADS, n_layers=$N_LAYERS" | tee -a $SBATCH_OUT
 echo "Batch size: $BATCH_SIZE, Sequence length: $SEQUENCE_LENGTH" | tee -a $SBATCH_OUT
 
-torchrun ${DISTRIBUTED_ARGS[@]} main.py \
+srun torchrun_jsc ${DISTRIBUTED_ARGS[@]} main.py \
     --run_name "dragon-${MODEL_SIZE}-adamw" \
     ${SETUP_FLAG} \
     --model dragon \

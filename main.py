@@ -71,7 +71,7 @@ num_params = sum(p.numel() for p in model.parameters())
 #print0(f"number of parameters: {num_params}")
 nconfig.num_params = num_params
 model = model.to(torch.bfloat16)
-model = torch.compile(model, dynamic=False)
+#model = torch.compile(model, dynamic=False)
 model = model.cuda()
 
 #print0(model)
