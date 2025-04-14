@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=01:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/test_run2.err            # standard error file
-#SBATCH --output=logs/test_run2.out           # standard output file
+#SBATCH --error=logs/test_run3.err            # standard error file
+#SBATCH --output=logs/test_run3.out           # standard output file
 #SBATCH --account=jureap140       # account name
 #SBATCH --partition=all # partition name for prod
 
@@ -128,6 +128,7 @@ echo "Batch size: $BATCH_SIZE, Sequence length: $SEQUENCE_LENGTH" | tee -a $SBAT
 srun torchrun_jsc ${DISTRIBUTED_ARGS[@]} main.py \
     --run_name "dragon-${MODEL_SIZE}-adamw" \
     ${SETUP_FLAG} \
+    --debug \
     --model dragon \
     --d_model $D_MODEL \
     --n_heads $N_HEADS \

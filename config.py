@@ -12,6 +12,7 @@ class NanoConfig:
 
     # mode
     setup_only: bool = False # whether to only do the setup
+    debug: bool = False
     
     # arch - general
     d_model : int = 768
