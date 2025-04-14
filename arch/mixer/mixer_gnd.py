@@ -15,9 +15,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from fla.modules import FusedRMSNormSwishGate, RMSNorm, ShortConvolution
-from fla.ops.gated_delta_rule import (chunk_gated_delta_rule,
-                                      fused_recurrent_gated_delta_rule)
+try:
+    from fla.modules import FusedRMSNormSwishGate, RMSNorm, ShortConvolution
+    from fla.ops.gated_delta_rule import chunk_gated_delta_rule, fused_recurrent_gated_delta_rule
+except ImportError:
+    chunk_gated_delta_rule, fused_recurrent_gated_delta_rule = None, None
 
 from config import NanoConfig
 
