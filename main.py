@@ -260,6 +260,17 @@ for step in range(nconfig.num_iterations + 1):
     # --------------- TRAINING SECTION END -------------------
     # everything that follows now is just diagnostics, prints, logging, etc.
 
+    RMS_LOG_EVERY = 250
+    if master_process and (step % RMS_LOG_EVERY == 0 or last_step):
+        with torch.no_grad():
+            rms_dict = {}
+            for name, param in raw_model.named_parameters():
+                if param.requires_grad:
+                    rms = torch.sqrt(torch.mean(param.data.float() ** 2)).item()
+                    rms_dict[f"weights_rms/{name}"] = rms
+        if rms_dict:
+            wandb.log(rms_dict, step=step)
+
     #dist.all_reduce(train_loss, op=dist.ReduceOp.AVG) # all-reducing the training loss would be more correct in terms of logging, but slower
     approx_time = training_time_ms + 1000 * (time.time() - t0)
     avg_step_time = approx_time / timed_steps
