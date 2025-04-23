@@ -118,5 +118,8 @@ if __name__ == "__main__":
     state_dict = checkpoint['model']
     new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
     model.load_state_dict(new_state_dict)
+    print(f"Loading model from {args.run_dir}.")
     
     eval_pg19(args.run_dir, model, args.num_samples, ctx_len, 4, log_wandb=False)
+
+    print(f"Done evaluating PG19 on {args.run_dir}")

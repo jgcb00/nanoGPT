@@ -4,34 +4,37 @@ from scipy.ndimage import gaussian_filter1d
 from dataclasses import dataclass
 import tyro
 from pathlib import Path
+from typing import Optional, Sequence
 
 import torch
 
 @dataclass
 class Args:
-    run_dir: Path  # something like logs/... (the dir that contains the .pt model)
+    run_dirs: Sequence[Path]               # list of run directories
+    names: Optional[Sequence[str]] = None  # optional labels for each run
 
     def __post_init__(self):
-        print(self.run_dir)
-        assert self.run_dir.exists(), f"Run directory {self.run_dir} does not exist."
+        for rd in self.run_dirs:
+            print(rd)
+            assert rd.exists(), f"Run directory {rd} does not exist."
+        if self.names is not None:
+            assert len(self.names) == len(self.run_dirs), \
+                "Number of names must match number of run_dirs."
 
 args = tyro.cli(Args)
 
-per_token_loss = torch.load(args.run_dir / 'per_token_loss.pt', map_location='cpu')
-
 plt.figure(figsize=(10, 6))
-
-# Method 1: Simple moving average smoothing
-window_size = 100  # Adjust this based on your desired smoothness level
-weights = np.ones(window_size) / window_size
-smoothed_loss = np.convolve(per_token_loss.numpy(), weights, mode='valid')
-
-# Fix: Ensure x and y have the same dimensions
-x_values = np.arange(len(smoothed_loss))
-plt.plot(x_values, smoothed_loss, linewidth=2, color='red', label='Moving Avg (window={})'.format(window_size))
+for idx, rd in enumerate(args.run_dirs):
+    per_token_loss = torch.load(rd / 'per_token_loss.pt', map_location='cpu')
+    window_size = 100
+    weights = np.ones(window_size) / window_size
+    smoothed_loss = np.convolve(per_token_loss.numpy(), weights, mode='valid')
+    x_values = np.arange(len(smoothed_loss))
+    label = args.names[idx] if args.names else rd.name
+    plt.plot(x_values, smoothed_loss, linewidth=2, label=label)
 
 y_min = 3.0
-y_max = 5.0
+y_max = 3.5
 plt.ylim(y_min, y_max)
 
 # Add other plot elements
@@ -41,5 +44,5 @@ plt.ylabel('Loss', fontsize=12)
 plt.grid(True, alpha=0.3)
 plt.legend()
 plt.tight_layout()
-plt.savefig('per_token_loss.png', dpi=300)
+plt.savefig('per_token_loss.png', dpi=600)
 plt.show()

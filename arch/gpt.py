@@ -95,7 +95,7 @@ class GPT(nn.Module):
         if self.config.is_scorer:
             self.transformer.wte.weight = self.lm_head.weight
 
-    def forward(self, idx, targets=None, caches=None, just_logits=False):
+    def forward(self, idx, targets=None, caches=None, just_logits=False, scores=None):
         B, L = idx.size()
 
         # forward the GPT model itself

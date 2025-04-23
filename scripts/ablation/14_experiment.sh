@@ -3,9 +3,9 @@
 #SBATCH --ntasks-per-node=1 # number of tasks per node
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
-#SBATCH --time=10:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment14or_GDN_SL_bis.err            # standard error file
-#SBATCH --output=logs/experiment14or_GDN_SL_bis.out           # standard output file
+#SBATCH --time=12:00:00              # time limits: here 1 hour
+#SBATCH --error=logs/experiment14_GDN_SL_repart_middle_ROPE163.err            # standard error file
+#SBATCH --output=logs/experiment14_GDN_SL_repart_middle_ROPE163.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -44,8 +44,9 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp14_Dragon-L-GDN-rope_to_nope-skyladder_0.6-bis-adamw \
+    --run_name exp14_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-rope_local163-adamw \
     --rope_to_nope \
+    --rope_theta_local 163 \
     --slw_warmup_iters 0.6 \
     --model dragon \
     --d_model 1280 \
@@ -57,6 +58,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --no-qk-norm \
     --attn_type diff \
     --lin_attn_type gdn \
+    --global_attn_repart middle \
     --expand_factor 2 \
     --layer-norm-scaling \
     --scalable_softmax \
@@ -77,5 +79,5 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --save_every 10000 \
     --eval_benchmarks_tasks 'hellaswag,swde,fda' \
     --eval_benchmarks \
-    --no-evalpg19 \
+    --evalpg19 \
     --log_wandb

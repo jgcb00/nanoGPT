@@ -103,43 +103,66 @@ class Dragon(nn.Module):
         self.config = config
 
         # TODO: fuse the two loops?
-        
-        swas : List[bool] = [] # whether to use swa for each layer
-        for i in range(config.n_layers):
-            layer_depth = i + 1
 
-            if config.use_swa:
-                is_first = layer_depth == 1
-                is_middle = layer_depth == (config.n_layers + 1) // 2
-                is_last = layer_depth == config.n_layers
-                swa = not (is_first or is_middle or is_last)
-            else:
-                swa = False
+        if self.config.global_attn_repart == "hymba":
+            swas : List[bool] = [] # whether to use swa for each layer
+            for i in range(config.n_layers):
+                layer_depth = i + 1
+
+                if config.use_swa:
+                    is_first = layer_depth == 1
+                    is_middle = layer_depth == (config.n_layers + 1) // 2
+                    is_last = layer_depth == config.n_layers
+                    swa = not (is_first or is_middle or is_last)
+                else:
+                    swa = False
+                    
+                swas.append(swa)
+
+            blocks : List[Block] = []
+            for i in range(config.n_layers):
+                layer_depth = i + 1
+                is_local = swas[i]
+                kv_source = None
+
+                if not config.use_kv_sharing:
+                    blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+                    continue
                 
-            swas.append(swa)
-        
-        blocks : List[Block] = []
-        for i in range(config.n_layers):
-            layer_depth = i + 1
-            is_local = swas[i]
-            kv_source = None
-
-            if not config.use_kv_sharing:
-                blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
-                continue
-            
-            # KV sharing strategy
-            if config.use_swa:
-                # global/local attn: share kv between consecutive local layers (globals are isolated kv-wise)
-                if is_local and i > 0 and swas[i-1]: # prev is local
-                    if blocks[i-1].kv_source is None: # prev doesn't have kv source
+                # KV sharing strategy
+                if config.use_swa:
+                    # global/local attn: share kv between consecutive local layers (globals are isolated kv-wise)
+                    if is_local and i > 0 and swas[i-1]: # prev is local
+                        if blocks[i-1].kv_source is None: # prev doesn't have kv source
+                            kv_source = blocks[i-1]
+                else:
+                    # full global attn: share between every 2 layers
+                    if i > 0 and i % 2 == 1: # odd layers get KV from previous even layer
                         kv_source = blocks[i-1]
-            else:
-                # full global attn: share between every 2 layers
-                if i > 0 and i % 2 == 1: # odd layers get KV from previous even layer
-                    kv_source = blocks[i-1]
-                
-            blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+                    
+                blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+        elif self.config.global_attn_repart == "middle":
+            n = config.n_layers
+            base, rem = divmod(n, 3)
+            group_sizes = [base + (1 if i < rem else 0) for i in range(3)]
+            starts = [sum(group_sizes[:i]) for i in range(3)]
+            mids = {starts[i] + group_sizes[i] // 2 for i in range(3)}
+            swas = [i not in mids for i in range(n)]
+            blocks: List[Block] = []
+            for i in range(n):
+                layer_depth = i + 1
+                is_local = swas[i]
+                kv_source = None
+                if not config.use_kv_sharing:
+                    blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+                    continue
+                if is_local and i > 0 and swas[i-1]: # share kv cache between consecutive local layers
+                    prev = blocks[i-1]
+                    if prev.kv_source is None:
+                        kv_source = prev
+                blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+        else:
+            raise NotImplementedError
             
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.d_model),

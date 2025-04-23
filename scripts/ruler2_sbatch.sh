@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1         # number of gpus per node
 #SBATCH --time=02:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/0eval.err            # standard error file
-#SBATCH --output=logs/0eval.out           # standard output file
+#SBATCH --error=logs/1eval.err            # standard error file
+#SBATCH --output=logs/1eval.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -18,14 +18,30 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval.py \
-    --run_dir ${1} \
-    --tasks hellaswag,fda,swde
- #   --prompt_len 512,1024,2048,4096 \
+    --run_dir logs/exp1_GPT2-L-adamw_63024fd8 \
+    --tasks niah_single_3 \
+    --prompt_len 8192 \
 
-#python eval.py \
-#    --run_dir ${1} \
-#    --tasks ruler_vt \
-#    --prompt_len 512,1024,2048,4096 \
+python eval.py \
+    --run_dir logs/exp6_GPT2-L-scalable_softmax-adamw_cec914cd \
+    --tasks niah_single_3 \
+    --prompt_len 8192 \
+
+python eval.py \
+    --run_dir logs/exp13_Dragon-L-GDN-scalable_softmax-dff-deepseekinit-skyladder_0.6-adamw_ad2556a5 \
+    --tasks niah_single_3 \
+    --prompt_len 8192 \
+
+python eval.py \
+    --run_dir logs/exp13_Dragon-L-scalable_softmax-dff-deepseekinit-adamw_98dc1763 \
+    --tasks niah_single_3 \
+    --prompt_len 8192 \
+
+python eval.py \
+    --run_dir logs/exp13_Dragon-L-scalable_softmax-dff-deepseekinit-repart_middle-adamw_8192bc2a \
+    --tasks niah_single_3 \
+    --prompt_len 8192 \
+
 
 # niah_single_3
 

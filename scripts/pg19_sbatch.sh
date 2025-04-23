@@ -3,9 +3,9 @@
 #SBATCH --ntasks-per-node=1 # number of tasks per node
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1         # number of gpus per node
-#SBATCH --time=02:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/0eval.err            # standard error file
-#SBATCH --output=logs/0eval.out           # standard output file
+#SBATCH --time=01:00:00              # time limits: here 1 hour
+#SBATCH --error=logs/eval_14.err            # standard error file
+#SBATCH --output=logs/eval_14.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -17,17 +17,10 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
-python eval.py \
-    --run_dir ${1} \
-    --tasks hellaswag,fda,swde
- #   --prompt_len 512,1024,2048,4096 \
+python eval_pg19.py \
+    --run_dir logs/exp13_Dragon-L-scalable_softmax-dff-deepseekinit-skyladder-repart_middle-adamw_0a417b86 \
+    --num_samples 2048 \
 
-#python eval.py \
-#    --run_dir ${1} \
-#    --tasks ruler_vt \
-#    --prompt_len 512,1024,2048,4096 \
-
-# niah_single_3
-
-# hellaswag,fda,swde
-#hellaswag,swde,fda,arc_easy,arc_challenge,piqa,winogrande,lambada,openbookqa,squadv2
+python eval_pg19.py \
+    --run_dir logs/exp14_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-adamw_98777723 \
+    --num_samples 2048 \

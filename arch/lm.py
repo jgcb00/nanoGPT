@@ -108,7 +108,7 @@ class NanoLM(LM):
         print("generate_until")
 
         task = requests[0].task_name
-        self.batch_size = 16 # this function supports arbitrary batch sizes, 16 is a good compromise
+        self.batch_size = 8 # this function supports arbitrary batch sizes, 16 is a good compromise
         
         outputs = []
         

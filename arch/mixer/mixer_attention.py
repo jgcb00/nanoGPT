@@ -80,7 +80,11 @@ class MixerAttention(nn.Module):
         if not kv_share: # only define kv projs if not sharing
             self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
             self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
-        self.rotary = Rotary(self.d_head)
+        if self.rope:
+            if self.swa:
+                self.rotary = Rotary(self.d_head, base=self.config.rope_theta_local) # 477=3k/(2pi)
+            else:
+                self.rotary = Rotary(self.d_head, base=self.config.rope_theta_global)
         if self.scalable_softmax:
             self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads))
         self.last_k = None
@@ -178,7 +182,11 @@ class MixerMetaTokensAttention(nn.Module):
         if not kv_share: # only define kv projs if not sharing
             self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
             self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
-        self.rotary = Rotary(self.d_head)
+        if self.rope:
+            if self.swa:
+                self.rotary = Rotary(self.d_head, base=self.config.rope_theta_local) # 477=3k/(2pi)
+            else:
+                self.rotary = Rotary(self.d_head, base=self.config.rope_theta_global)
         
         if self.scalable_softmax:
             self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads))
@@ -311,7 +319,11 @@ class MixerDiffAttention(nn.Module):
         if not kv_share: # only define kv projs if not sharing
             self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.head_dim, bias=False)
             self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.head_dim, bias=False)
-        self.rotary = Rotary(self.head_dim)
+        if self.rope:
+            if self.swa:
+                self.rotary = Rotary(self.head_dim, base=self.config.rope_theta_local) # 477=3k/(2pi)
+            else:
+                self.rotary = Rotary(self.head_dim, base=self.config.rope_theta_global)
         if self.scalable_softmax:
             self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads))
         self.last_k1 = None

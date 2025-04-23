@@ -18,7 +18,9 @@ USED FOR EVALUATING ALREADY, OLD, TRAINED MODELS
 WILL BE DELETED, AS THIS CODE IS ALSO PRESENT AFTER THE TRAINING LOOP IN THE MAIN SCRIPT
 """
 
-def eval_benchmarks(log_dir, model, tokenizer_path, limit=None, tasks=None):
+def eval_benchmarks(log_dir, model, tokenizer_path, limit=None, tasks=None, prompt_len=[4096]):
+    # prompt len only used for RULER tasks (NIAH...)
+
     if isinstance(log_dir, str):
         log_dir = Path(log_dir)
       
@@ -37,7 +39,7 @@ def eval_benchmarks(log_dir, model, tokenizer_path, limit=None, tasks=None):
     )
 
     # evaluate
-    results = lm_eval.simple_evaluate(lm, tasks=tasks, limit=limit)
+    results = lm_eval.simple_evaluate(lm, tasks=tasks, model_args={"tokenizer": "gpt2"}, metadata={"max_seq_lengths": prompt_len}, limit=limit)
 
     # export all the results to a json file (to see the completions)
     result_file_path = log_dir / f"results_{'_'.join(tasks)}.json"
@@ -60,9 +62,12 @@ if __name__ == "__main__":
     class Args:
         run_dir: Path # something like logs/... (the dir that contains the .pt model)
         tasks: str # list of tasks to evaluate on (hellaswag, winogrande, ...)
+        prompt_len: str = "4096" # only used for RULER tasks (NIAH...)
 
         def __post_init__(self):
             self.tasks = self.tasks.split(',')
+            self.prompt_len = self.prompt_len.split(',')
+            self.prompt_len = [int(x) for x in self.prompt_len]
             assert self.run_dir.exists(), f"Run directory {self.run_dir} does not exist."
 
     args = tyro.cli(Args)
@@ -89,6 +94,6 @@ if __name__ == "__main__":
     new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
     model.load_state_dict(new_state_dict)
 
-    _ = eval_benchmarks(args.run_dir, model, 'data/enc.pkl', tasks=args.tasks)
+    _ = eval_benchmarks(args.run_dir, model, 'data/enc.pkl', tasks=args.tasks, limit=None, prompt_len=args.prompt_len)
 
     print(f"Done evaluating {args.run_dir} on {args.tasks}.")

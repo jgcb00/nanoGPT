@@ -38,12 +38,9 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp1_GPT2-L-nsa_32_heads-adamw \
-    --attn_type nsa \
-    --nsa_topn 32 \
+    --run_name exp1_GPT2-L-track_rms-adamw \
     --d_model 1280 \
-    --n_heads 32 \
-    --n_kv_heads 2 \
+    --n_heads 20 \
     --n_layers 36 \
     --optim adamw \
     --batch_size 64 \
