@@ -110,7 +110,7 @@ num_params = sum(p.numel() for p in model.parameters())
 print0(f"number of parameters: {num_params}")
 nconfig.num_params = num_params
 model = model.to(torch.bfloat16)
-model = torch.compile(model, dynamic=False)
+model = torch.compile(model, dynamic=True)
 model = model.cuda()
 
 print0(model)
@@ -125,7 +125,7 @@ schedulers = get_schedulers(optimizers, nconfig)
 
 # begin wandb logging
 if master_process:
-    wandb.init(project='nanoGPT', name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
+    wandb.init(project='nanoGPT-longcrawl64', name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
 
 training_time_ms = 0
 # start the clock

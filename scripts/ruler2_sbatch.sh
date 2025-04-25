@@ -18,30 +18,24 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval.py \
-    --run_dir logs/exp1_GPT2-L-adamw_63024fd8 \
+    --run_dir logs/exp14_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-adamw_98777723 \
     --tasks niah_single_3 \
     --prompt_len 8192 \
 
 python eval.py \
-    --run_dir logs/exp6_GPT2-L-scalable_softmax-adamw_cec914cd \
+    --run_dir logs/exp14_Dragon-L-rope_to_nope-adamw_691e02b2 \
     --tasks niah_single_3 \
     --prompt_len 8192 \
 
 python eval.py \
-    --run_dir logs/exp13_Dragon-L-GDN-scalable_softmax-dff-deepseekinit-skyladder_0.6-adamw_ad2556a5 \
+    --run_dir logs/exp14_Dragon-L-rope_to_nope-skyladder_0.6-adamw_a61ee694 \
     --tasks niah_single_3 \
     --prompt_len 8192 \
 
 python eval.py \
-    --run_dir logs/exp13_Dragon-L-scalable_softmax-dff-deepseekinit-adamw_98dc1763 \
+    --run_dir logs/exp14_Dragon-L-rope_to_nope-skyladder-repart_middle-adamw_8357966b \
     --tasks niah_single_3 \
     --prompt_len 8192 \
-
-python eval.py \
-    --run_dir logs/exp13_Dragon-L-scalable_softmax-dff-deepseekinit-repart_middle-adamw_8192bc2a \
-    --tasks niah_single_3 \
-    --prompt_len 8192 \
-
 
 # niah_single_3
 
