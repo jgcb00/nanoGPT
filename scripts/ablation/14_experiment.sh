@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --nodes=8           # number of nodes
+#SBATCH --nodes=4           # number of nodes
 #SBATCH --ntasks-per-node=1 # number of tasks per node
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment14_LG64.err            # standard error file
-#SBATCH --output=logs/experiment14_LG64.out           # standard output file
+#SBATCH --error=logs/experiment14_no_SS.err            # standard error file
+#SBATCH --output=logs/experiment14_no_SS.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -45,7 +45,7 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp14_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-adamw \
+    --run_name exp14_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-no_ss-rope1k-adamw \
     --rope_to_nope \
     --slw_warmup_iters 0.6 \
     --rope_theta_local 163 \
@@ -62,23 +62,23 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --global_attn_repart middle \
     --expand_factor 2 \
     --layer-norm-scaling \
-    --scalable_softmax \
+    --no-scalable_softmax \
     --optim adamw \
-    --batch_size 128 \
+    --batch_size 64 \
     --device_batch_size 2 \
-    --learning_rate 1.605e-3 \
-    --num_iterations 66342 \
+    --learning_rate 9.7e-4 \
+    --num_iterations 32990 \
     --warmup_iters 0.0045 \
     --warmdown_iters 0.15 \
     --weight_decay 0.1 \
-    --sequence_length 5888 \
+    --sequence_length 4736 \
     --vocab_size 50304 \
-    --input_bin '../longcrawl64/train_*.bin' \
-    --input_val_bin '../longcrawl64/val_*.bin' \
+    --input_bin '../nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
+    --input_val_bin '../nanoGPT/data/fineweb100B/fineweb_val_*.bin' \
     --val_loss_every 250 \
-    --val_tokens 10174464 \
+    --val_tokens 10002432 \
     --save_every 10000 \
     --eval_benchmarks_tasks 'hellaswag,swde,fda' \
-    --no-eval_benchmarks \
+    --eval_benchmarks \
     --no-evalpg19 \
     --log_wandb

@@ -363,10 +363,24 @@ class MixerDiffAttention(nn.Module):
             
             self.last_k1, self.last_k2, self.last_v = k1, k2, v
 
+        wsize = self.swa_window_size if self.swa else -1
+        if self.config.slw_window > 0:
+            if self.swa:
+                wsize = min(self.config.slw_window, self.swa_window_size)
+            else:
+                if self.config.slw_window < self.config.sequence_length:
+                    wsize = self.config.slw_window
+                else:
+                    wsize = -1
+
         if self.scalable_softmax:
             # scalable-softmax (https://arxiv.org/abs/2501.19399): multiply q by s*log(n)
             log_pos = torch.arange(start_pos+1, start_pos+T+1, device=q.device).view(1, T, 1, 1).float().log()
             q = (self.softmax_scaler.view(1, 1, -1, 1) * log_pos) * q
+
+            #pos = torch.arange(start_pos+1, start_pos+T+1, device=q.device).view(1, T, 1, 1)
+            #log_pos = pos.float().log() if wsize <= 0 else torch.clamp_max(pos.float(), wsize).log()
+            #q = (self.softmax_scaler.view(1, 1, -1, 1) * log_pos) * q
             
         # split q heads into two groups
         q = q.view(B, T, 2, self.n_heads//2, self.head_dim)
@@ -383,16 +397,6 @@ class MixerDiffAttention(nn.Module):
             cache = (k1, k2, v, new_pos)
         
         k1, k2, v = repeat_kv(k1, self.n_kv_repeats), repeat_kv(k2, self.n_kv_repeats), repeat_kv(v, self.n_kv_repeats) # GQA
-
-        wsize = self.swa_window_size if self.swa else -1
-        if self.config.slw_window > 0:
-            if self.swa:
-                wsize = min(self.config.slw_window, self.swa_window_size)
-            else:
-                if self.config.slw_window < self.config.sequence_length:
-                    wsize = self.config.slw_window
-                else:
-                    wsize = -1
 
         y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
         y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))

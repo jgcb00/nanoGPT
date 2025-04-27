@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment13_mamba_SL_repart_middle.err            # standard error file
-#SBATCH --output=logs/experiment13_mamba_SL_repart_middle.out           # standard output file
+#SBATCH --error=logs/experiment13_mamba_muon_no_ss.err            # standard error file
+#SBATCH --output=logs/experiment13_mamba_muon_no_ss.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -44,7 +44,7 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp13_Dragon-L-scalable_softmax-dff-deepseekinit-skyladder-repart_middle-adamw \
+    --run_name exp13_Dragon-L-GDN-no_scalable_softmax-dff-deepseekinit-skyladder-repart_middle-muon \
     --model dragon \
     --slw_warmup_iters 0.6 \
     --d_model 1280 \
@@ -55,12 +55,12 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --use_swa \
     --no-qk-norm \
     --attn_type diff \
-    --lin_attn_type mamba2 \
+    --lin_attn_type gdn \
     --global_attn_repart middle \
     --expand_factor 2 \
     --layer-norm-scaling \
-    --scalable_softmax \
-    --optim adamw \
+    --no-scalable_softmax \
+    --optim muon_moonlight \
     --batch_size 64 \
     --device_batch_size 2 \
     --learning_rate 9.7e-4 \

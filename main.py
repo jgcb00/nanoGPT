@@ -110,10 +110,12 @@ num_params = sum(p.numel() for p in model.parameters())
 print0(f"number of parameters: {num_params}")
 nconfig.num_params = num_params
 model = model.to(torch.bfloat16)
-model = torch.compile(model, dynamic=True)
+model = torch.compile(model, dynamic=nconfig.slw_warmup_iters > 0 and not nconfig.lin_attn_type == "mamba2")
 model = model.cuda()
 
 print0(model)
+for name, p in model.named_parameters():
+    print0(f"{name}: {p.shape}")
 
 # here we wrap model into DDP container
 model = DDP(model, device_ids=[ddp_local_rank])
@@ -125,7 +127,11 @@ schedulers = get_schedulers(optimizers, nconfig)
 
 # begin wandb logging
 if master_process:
-    wandb.init(project='nanoGPT-longcrawl64', name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
+    if "longcrawl64" in nconfig.input_bin:
+        project = 'nanoGPT-longcrawl64'
+    else:
+        project = 'nanoGPT'
+    wandb.init(project=project, name=nconfig.run_name, config={**vars(nconfig)}, mode=None if nconfig.log_wandb else 'disabled')
 
 training_time_ms = 0
 # start the clock
