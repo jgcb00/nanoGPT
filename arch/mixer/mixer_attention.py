@@ -2,7 +2,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.attention.flex_attention import create_block_mask, flex_attention
-import flash_attn
+
+try:
+    from flash_attn import flash_attn_func # FA2
+    FLASH_ATTN_TYPE = "FA2"
+except ImportError:
+    try:
+        import flash_attn_interface # FA3
+        flash_attn_func = flash_attn_interface.flash_attn_func
+        FLASH_ATTN_TYPE = "FA3"
+    except ImportError:
+        flash_attn_func = None
+        FLASH_ATTN_TYPE = None
 
 try:
     import flex_head_fa
@@ -146,7 +157,12 @@ class MixerAttention(nn.Module):
                 else:
                     wsize = -1
         
-        y = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        if FLASH_ATTN_TYPE == "FA2":
+            y = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        elif FLASH_ATTN_TYPE == "FA3":
+            y, _ = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        else:
+            raise ValueError
         y = y.contiguous().view(B, T, self.d_model*self.expand_factor)
         return y, cache
     
