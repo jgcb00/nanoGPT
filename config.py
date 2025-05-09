@@ -18,6 +18,9 @@ class NanoConfig:
     attn_type : str = "normal" # normal, diff, nsa, metatokens
     local_attn_type: str = "normal"
     lin_attn_type: str = "mamba2" # mamba2, gdn
+    global_attn_repart: str = "hymba" # hymba (beginning,middle,end), middle (3 parts, global @middle of each part)
+    rope_theta_global: float = 10000.0
+    rope_theta_local: float = 10000.0
     layer_norm_scaling : bool = False # whether to scale layer norm by sqrt(layer_depth)
     fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
 
@@ -108,7 +111,7 @@ class NanoConfig:
     # eval - long-context PG19
     evalpg19 : bool = True
     evalpg19_ctx_len : int = 16384
-    evalpg19_num_samples : int = 128
+    evalpg19_num_samples : int = 2048
     evalpg19_batch_size : int = 4
     
     def __post_init__(self):

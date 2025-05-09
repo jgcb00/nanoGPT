@@ -23,12 +23,21 @@ try:
 except ImportError:
     selective_state_update = None
 
-from mamba_ssm.ops.triton.layernorm_gated import RMSNorm as RMSNormGated
+try:
+    from mamba_ssm.ops.triton.layernorm_gated import RMSNorm as RMSNormGated
+except ImportError:
+    RMSNormGated = None
 
-from mamba_ssm.distributed.distributed_utils import all_reduce, reduce_scatter
+try:
+    from mamba_ssm.distributed.distributed_utils import all_reduce, reduce_scatter
+except ImportError:
+    all_reduce, reduce_scatter = None, None
 
-from mamba_ssm.ops.triton.ssd_combined import mamba_chunk_scan_combined
-from mamba_ssm.ops.triton.ssd_combined import mamba_split_conv1d_scan_combined
+try:
+    from mamba_ssm.ops.triton.ssd_combined import mamba_chunk_scan_combined
+    from mamba_ssm.ops.triton.ssd_combined import mamba_split_conv1d_scan_combined
+except ImportError:
+    mamba_chunk_scan_combined, mamba_split_conv1d_scan_combined = None, None
 
 from config import NanoConfig
 

@@ -2,7 +2,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.attention.flex_attention import create_block_mask, flex_attention
-import flash_attn
+
+try:
+    from flash_attn import flash_attn_func # FA2
+    FLASH_ATTN_TYPE = "FA2"
+except ImportError:
+    try:
+        import flash_attn_interface # FA3
+        flash_attn_func = flash_attn_interface.flash_attn_func
+        FLASH_ATTN_TYPE = "FA3"
+    except ImportError:
+        flash_attn_func = None
+        FLASH_ATTN_TYPE = None
 
 try:
     import flex_head_fa
@@ -80,7 +91,11 @@ class MixerAttention(nn.Module):
         if not kv_share: # only define kv projs if not sharing
             self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
             self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
-        self.rotary = Rotary(self.d_head)
+        if self.rope:
+            if self.swa:
+                self.rotary = Rotary(self.d_head, base=self.config.rope_theta_local) # 477=3k/(2pi)
+            else:
+                self.rotary = Rotary(self.d_head, base=self.config.rope_theta_global)
         if self.scalable_softmax:
             self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads))
         self.last_k = None
@@ -115,6 +130,8 @@ class MixerAttention(nn.Module):
                 q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
             
             self.last_k, self.last_v = k, v
+
+        #return q,k,v
         
         if self.scalable_softmax:
             # scalable-softmax (https://arxiv.org/abs/2501.19399): multiply q by s*log(n)
@@ -142,7 +159,12 @@ class MixerAttention(nn.Module):
                 else:
                     wsize = -1
         
-        y = flash_attn.flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        if FLASH_ATTN_TYPE == "FA2":
+            y = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        elif FLASH_ATTN_TYPE == "FA3":
+            y, _ = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        else:
+            raise ValueError
         y = y.contiguous().view(B, T, self.d_model*self.expand_factor)
         return y, cache
     
@@ -178,7 +200,11 @@ class MixerMetaTokensAttention(nn.Module):
         if not kv_share: # only define kv projs if not sharing
             self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
             self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
-        self.rotary = Rotary(self.d_head)
+        if self.rope:
+            if self.swa:
+                self.rotary = Rotary(self.d_head, base=self.config.rope_theta_local) # 477=3k/(2pi)
+            else:
+                self.rotary = Rotary(self.d_head, base=self.config.rope_theta_global)
         
         if self.scalable_softmax:
             self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads))
@@ -311,7 +337,11 @@ class MixerDiffAttention(nn.Module):
         if not kv_share: # only define kv projs if not sharing
             self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.head_dim, bias=False)
             self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.head_dim, bias=False)
-        self.rotary = Rotary(self.head_dim)
+        if self.rope:
+            if self.swa:
+                self.rotary = Rotary(self.head_dim, base=self.config.rope_theta_local) # 477=3k/(2pi)
+            else:
+                self.rotary = Rotary(self.head_dim, base=self.config.rope_theta_global)
         if self.scalable_softmax:
             self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads))
         self.last_k1 = None
@@ -351,9 +381,23 @@ class MixerDiffAttention(nn.Module):
             
             self.last_k1, self.last_k2, self.last_v = k1, k2, v
 
+        wsize = self.swa_window_size if self.swa else -1
+        if self.config.slw_window > 0:
+            if self.swa:
+                wsize = min(self.config.slw_window, self.swa_window_size)
+            else:
+                if self.config.slw_window < self.config.sequence_length:
+                    wsize = self.config.slw_window
+                else:
+                    wsize = -1
+
         if self.scalable_softmax:
             # scalable-softmax (https://arxiv.org/abs/2501.19399): multiply q by s*log(n)
-            log_pos = torch.arange(start_pos+1, start_pos+T+1, device=q.device).view(1, T, 1, 1).float().log()
+            #log_pos = torch.arange(start_pos+1, start_pos+T+1, device=q.device).view(1, T, 1, 1).float().log()
+            #q = (self.softmax_scaler.view(1, 1, -1, 1) * log_pos) * q
+
+            pos = torch.arange(start_pos+1, start_pos+T+1, device=q.device).view(1, T, 1, 1)
+            log_pos = pos.float().log() if wsize <= 0 else torch.clamp_max(pos.float(), wsize).log()
             q = (self.softmax_scaler.view(1, 1, -1, 1) * log_pos) * q
             
         # split q heads into two groups
@@ -372,18 +416,9 @@ class MixerDiffAttention(nn.Module):
         
         k1, k2, v = repeat_kv(k1, self.n_kv_repeats), repeat_kv(k2, self.n_kv_repeats), repeat_kv(v, self.n_kv_repeats) # GQA
 
-        wsize = self.swa_window_size if self.swa else -1
-        if self.config.slw_window > 0:
-            if self.swa:
-                wsize = min(self.config.slw_window, self.swa_window_size)
-            else:
-                if self.config.slw_window < self.config.sequence_length:
-                    wsize = self.config.slw_window
-                else:
-                    wsize = -1
-
         y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
         y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        #y = (y1 - y2).contiguous()
         lambda_1 = torch.exp(torch.sum(self.lambda_q1*self.lambda_k1, dim=-1).float()).type_as(y1)
         lambda_2 = torch.exp(torch.sum(self.lambda_q2*self.lambda_k2, dim=-1).float()).type_as(y2)
         lambda_full = lambda_1 - lambda_2 + self.lambda_init

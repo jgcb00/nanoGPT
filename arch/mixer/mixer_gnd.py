@@ -153,6 +153,7 @@ class MixerGatedDeltaNet(nn.Module):
         """
 
         qkvba = self.in_proj(hidden_states) # (b, l, D)
+        qkvba = qkvba.to(torch.bfloat16)
         
         # split proj into q, k, v, b, a
         q_proj = qkvba[:, :, self.q_slice]
