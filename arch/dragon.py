@@ -15,6 +15,7 @@ from arch.mlp import MLP
 from arch.mixer.mixer_attention import MixerAttention, MixerMetaTokensAttention, MixerDiffAttention, MixerNativeSparseAttention
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
+from arch.utils import HeadWiseRMSNorm
 
 class Block(nn.Module):
     def __init__(self, config : NanoConfig, swa: bool = False, layer_depth: int = 0, kv_source=None):
@@ -63,10 +64,13 @@ class Block(nn.Module):
         self.kv_source = kv_source
         self.out_proj = nn.Linear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
         #self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
-        self.attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
-        self.is_lin_attn_norm = config.rmsnorm
-        if not config.rmsnorm:
-            self.lin_attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
+
+        #self.attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
+        #self.is_lin_attn_norm = config.rmsnorm
+        #if not config.rmsnorm:
+        #    self.lin_attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
+        self.attn_norm = HeadWiseRMSNorm(n_heads=self.lin_attn.n_heads, d_head=self.lin_attn.head_v_dim, eps=1e-5)
+        self.lin_attn_norm = HeadWiseRMSNorm(n_heads=self.lin_attn.n_heads, d_head=self.lin_attn.head_v_dim, eps=1e-5)
         self.mlp = MLP(config)
         
         # register here to not break torch_dynamo
@@ -87,6 +91,8 @@ class Block(nn.Module):
         # y_attn and y_lin_attn are (B, L, E*d_model)
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache)
         y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache)
+        y_attn = self.attn_norm(y_attn).view(y_attn.size(0), y_attn.size(1), -1)
+        y_lin_attn = self.lin_attn_norm(y_lin_attn).view(y_lin_attn.size(0), y_lin_attn.size(1), -1)
         #y = F.rms_norm(y_attn, (int((hidden.size(-1)*self.expand_factor)),), self.attn_norm)
         #y = y + F.rms_norm(y_lin_attn, (int(hidden.size(-1)*self.expand_factor),), self.lin_attn_norm)
         y = y_attn + y_lin_attn
@@ -143,8 +149,10 @@ class Dragon(nn.Module):
                     
                 blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
         elif self.config.global_attn_repart == "middle":
+            
+            block_1 = Block(config, swa=True, layer_depth=1)
+            blocks = [block_1]
             """
-            block_1 = Block(config, swa=False, layer_depth=1)
             block_2 = Block(config, swa=True, layer_depth=2, kv_source=block_1)
             block_3 = Block(config, swa=True, layer_depth=3)
             block_4 = Block(config, swa=True, layer_depth=4, kv_source=block_3)
@@ -156,6 +164,7 @@ class Dragon(nn.Module):
             blocks = [block_1, block_2, block_3, block_4, block_5, block_6, block_7, block_8, block_9]
             """
 
+            """
             n = config.n_layers
             base, rem = divmod(n, 3)
             group_sizes = [base + (1 if i < rem else 0) for i in range(3)]
@@ -175,6 +184,7 @@ class Dragon(nn.Module):
                     if prev.kv_source is None:
                         kv_source = prev
                 blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+            """
         else:
             raise NotImplementedError
             

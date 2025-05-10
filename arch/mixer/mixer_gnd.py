@@ -209,7 +209,7 @@ class MixerGatedDeltaNet(nn.Module):
         else:
             if self.config.rmsnorm:
                 o = self.o_norm(o)
-        o = rearrange(o, 'b t h d -> b t (h d)').contiguous()
+        #o = rearrange(o, 'b t h d -> b t (h d)').contiguous()
         return o, (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
     
     def get_empty_cache(self):

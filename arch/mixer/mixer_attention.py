@@ -165,7 +165,7 @@ class MixerAttention(nn.Module):
             y, _ = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
         else:
             raise ValueError
-        y = y.contiguous().view(B, T, self.d_model*self.expand_factor)
+        #y = y.contiguous().view(B, T, self.d_model*self.expand_factor)
         return y, cache
     
     def get_kv(self):
@@ -425,7 +425,7 @@ class MixerDiffAttention(nn.Module):
         y = (y1 - lambda_full * y2).contiguous()
         # We found that group norm doesn't improve on long scale the results
         # y = F.rms_norm(y, (2*self.head_dim,)) * (1 - self.lambda_init) 
-        y = y.view(B, T, self.d_model*self.expand_factor)
+        #y = y.view(B, T, self.d_model*self.expand_factor)
         return y, cache
         
     def get_kv(self):
