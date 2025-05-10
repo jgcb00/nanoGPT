@@ -26,13 +26,13 @@ def get_optimizers(model, nconfig: NanoConfig, raw_model):
             muon_params = [
                 p
                 for name, p in model.named_parameters()
-                if p.ndim == 2 and "wte" not in name and "lm_head" not in name
+                if p.ndim == 2 and "wte" not in name and "lm_head" not in name and "group_norm" not in name
             ]
             adamw_params = [
                 p
                 for name, p in model.named_parameters()
                 if not (
-                    p.ndim == 2 and "wte" not in name and "lm_head" not in name
+                    p.ndim == 2 and "wte" not in name and "lm_head" not in name and "group_norm" not in name
                 )
             ]
 
@@ -56,6 +56,24 @@ def get_optimizers(model, nconfig: NanoConfig, raw_model):
             from arch.optim.stableSPAM import StableSPAM
             optimizer = StableSPAM(model.parameters(), lr=nconfig.learning_rate, weight_decay=nconfig.weight_decay)
             optimizers = [optimizer]
+        case 'swan':
+            from arch.optim.swan import SWAN
+            from torch.optim import AdamW
+            swan_params = [
+                p
+                for name, p in model.named_parameters()
+                if p.ndim == 2 and "wte" not in name and "lm_head" not in name and "group_norm" not in name
+            ]
+            adamw_params = [
+                p
+                for name, p in model.named_parameters()
+                if not (
+                    p.ndim == 2 and "wte" not in name and "lm_head" not in name and "group_norm" not in name
+                )
+            ]
+            optimizer1 = SWAN(swan_params, lr=nconfig.learning_rate, weight_decay=nconfig.weight_decay, do_compile=True)
+            optimizer2 = AdamW(adamw_params, lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
+            optimizers = [optimizer1, optimizer2]
         case _:
             raise ValueError(f"Optimizer {nconfig.optim} not supported")
     

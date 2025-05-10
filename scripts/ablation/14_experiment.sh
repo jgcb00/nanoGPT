@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment14_no_SS.err            # standard error file
-#SBATCH --output=logs/experiment14_no_SS.out           # standard output file
+#SBATCH --error=logs/experiment14_independent_gn_unique_qknorm_for_local_newrmsnormweights.err            # standard error file
+#SBATCH --output=logs/experiment14_independent_gn_unique_qknorm_for_local_newrmsnormweights.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -45,8 +45,13 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp14_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-no_ss-rope1k-adamw \
+    --run_name exp14_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-ss_warmedup-rope1k-independent_gn_unique-qk_norm-new_rmsnormweights-adamw \
     --rope_to_nope \
+    --no-use_gate_attn \
+    --use_gate \
+    --groupnorm_unique \
+    --groupnorm_unique_independent \
+    --rmsnorm_weights \
     --slw_warmup_iters 0.6 \
     --rope_theta_local 163 \
     --model dragon \
@@ -56,13 +61,13 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --n_layers 20 \
     --use_kv_sharing \
     --use_swa \
-    --no-qk-norm \
+    --qk-norm \
     --attn_type diff \
     --lin_attn_type gdn \
     --global_attn_repart middle \
     --expand_factor 2 \
     --layer-norm-scaling \
-    --no-scalable_softmax \
+    --scalable_softmax \
     --optim adamw \
     --batch_size 64 \
     --device_batch_size 2 \

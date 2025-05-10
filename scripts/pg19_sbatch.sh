@@ -3,7 +3,7 @@
 #SBATCH --ntasks-per-node=1 # number of tasks per node
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1         # number of gpus per node
-#SBATCH --time=05:00:00              # time limits: here 1 hour
+#SBATCH --time=10:00:00              # time limits: here 1 hour
 #SBATCH --error=logs/0eval_pg19.err            # standard error file
 #SBATCH --output=logs/0eval_pg19.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
@@ -18,13 +18,5 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval_pg19.py \
-    --run_dir logs/exp14_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-ss_warmedup-rope1k-adamw_7e37ac4e \
-    --num_samples 2048 \
-
-python eval_pg19.py \
-    --run_dir logs/exp13_Dragon-L-scalable_softmax_warmedup-dff-deepseekinit-skyladder-repart_middle-adamw_318c8695 \
-    --num_samples 2048 \
-
-python eval_pg19.py \
-    --run_dir logs/exp13_Dragon-L-GDN-scalable_softmax_warmedup-dff-deepseekinit-skyladder-repart_middle-adamw_82eef5bb \
+    --run_dir logs/exp14long_Dragon-L-GDN-hymba_norm-qk_norm-new_rmsnormweights-adamw_9eeff779 \
     --num_samples 2048 \

@@ -20,6 +20,7 @@ from fla.ops.gated_delta_rule import (chunk_gated_delta_rule,
                                       fused_recurrent_gated_delta_rule)
 
 from config import NanoConfig
+from arch.utils import HeadWiseRMSNorm
 
 class MixerGatedDeltaNet(nn.Module):
     def __init__(
@@ -137,7 +138,15 @@ class MixerGatedDeltaNet(nn.Module):
         else:
             if config.rmsnorm:
                 self.o_norm = RMSNorm(self.head_v_dim, eps=norm_eps)
-        
+
+        if self.config.groupnorm_unique:
+            if not self.config.groupnorm_unique_independent:
+                self.group_norm = nn.RMSNorm((self.n_heads, self.head_v_dim), elementwise_affine=config.groupnorm_weights, eps=1e-5)
+            else:
+                self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads, d_head=self.head_v_dim, eps=1e-5)
+        else:
+            self.group_norm = nn.RMSNorm(self.head_v_dim, elementwise_affine=config.groupnorm_weights, eps=1e-5)
+
         self.apply(self._initialize_weights)
     
     def _initialize_weights(self, module: nn.Module):
@@ -208,6 +217,7 @@ class MixerGatedDeltaNet(nn.Module):
         else:
             if self.config.rmsnorm:
                 o = self.o_norm(o)
+        o = self.group_norm(o)
         o = rearrange(o, 'b t h d -> b t (h d)').contiguous()
         return o, (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
     

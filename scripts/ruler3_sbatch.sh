@@ -3,7 +3,7 @@
 #SBATCH --ntasks-per-node=1 # number of tasks per node
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1         # number of gpus per node
-#SBATCH --time=02:00:00              # time limits: here 1 hour
+#SBATCH --time=10:00:00              # time limits: here 1 hour
 #SBATCH --error=logs/3eval.err            # standard error file
 #SBATCH --output=logs/3eval.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
@@ -18,9 +18,13 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval.py \
-    --run_dir logs/exp6_GPT2-L-scalable_softmax-adamw_cec914cd \
+    --run_dir logs/exp14long_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-no_ss-rope1k-groupnorm_full_shared-adamw_6a10e542 \
+    --tasks hellaswag,swde,fda \
+
+python eval.py \
+    --run_dir logs/exp14long_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-no_ss-rope1k-groupnorm_full_shared-adamw_6a10e542 \
     --tasks niah_single_3 \
-    --prompt_len 8192 \
+    --prompt_len 512,1024,2048,3074,4096,8192 \
 
 # niah_single_3
 

@@ -1,24 +1,14 @@
 #!/bin/bash
 
 python plot_pg19.py --run-dirs \
-    logs/exp13_Dragon-L-GDN-scalable_softmax-dff-deepseekinit-skyladder_0.6-adamw_ad2556a5 \
-    logs/exp13_Dragon-L-scalable_softmax-dff-deepseekinit-adamw_98dc1763 \
-    logs/exp13_Dragon-L-scalable_softmax-dff-deepseekinit-repart_middle-adamw_8192bc2a \
-    logs/exp13_Dragon-L-scalable_softmax-dff-deepseekinit-skyladder-repart_middle-adamw_0a417b86 \
-    logs/exp14_Dragon-L-GDN-rope_to_nope-adamw_dbbb4776 \
-    logs/exp14_Dragon-L-GDN-rope_to_nope-skyladder_0.6-adamw_7b191408 \
-    logs/exp14_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-adamw_98777723 \
-    logs/exp14_Dragon-L-rope_to_nope-adamw_691e02b2 \
-    logs/exp14_Dragon-L-rope_to_nope-skyladder_0.6-adamw_a61ee694 \
-    logs/exp14_Dragon-L-rope_to_nope-skyladder-repart_middle-adamw_8357966b \
+    logs/exp14long_Dragon-L-GDN-independent_gn_shared-qk_norm-new_rmsnormweights-adamw_b0299b26 \
+    logs/exp14long_Dragon-L-GDN-independent_gn_unique-qk_norm-new_rmsnormweights-adamw_f8657bb7 \
+    logs/exp14long_Dragon-L-GDN-no_SS-independent_gn_unique-qk_norm-new_rmsnormweights-adamw_8654c809 \
+    logs/exp12long_Dragon-L-GDN-independent_gn_unique-qk_norm-new_rmsnormweights-adamw_bb5524f0 \
+    logs/exp14long_Dragon-L-GDN-hymba_norm-qk_norm-new_rmsnormweights-adamw_9eeff779 \
     --names \
-    exp13-GDN-skyladder \
-    exp13-Mamba2 \
-    exp13-Mamba2-repart_middle \
-    exp13-Mamba2-repart_middle-skyladder \
-    exp14-GDN \
-    exp14-GDN-skyladder \
-    exp14-GDN-repart_middle-skyladder \
-    exp14-Mamba2 \
-    exp14-Mamba2-skyladder \
-    exp14-Mamba2-repart_middle-skyladder
+    exp14-independent_shared-qknorm-new_weights \
+    exp14-independent_unique-qknorm-new_weights \
+    exp14-no-ss-independent_unique-qknorm-new_weights \
+    exp12-independent_unique-qknorm-new_weights \
+    exp14-hymba_norm-qknorm-new_weights \

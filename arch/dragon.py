@@ -9,7 +9,7 @@ from cut_cross_entropy import linear_cross_entropy
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer.mixer_attention import MixerAttention, MixerMetaTokensAttention, MixerDiffAttention, MixerNativeSparseAttention
+from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention, MixerNativeSparseAttention
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 
@@ -24,10 +24,7 @@ class Block(nn.Module):
         if not swa:
             match config.attn_type:
                 case "normal":
-                    if config.num_meta_tokens == 0:
-                        self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
-                    else:
-                        self.attn = MixerMetaTokensAttention(config, swa=swa, kv_share=(kv_source is not None))
+                    self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
                 case "diff":
                     self.attn = MixerDiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
                 case "nsa":
@@ -42,8 +39,6 @@ class Block(nn.Module):
                     self.attn = MixerDiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
                 case "nsa":
                     self.attn = MixerNativeSparseAttention(config, swa=swa)
-                case "metatokens":
-                    self.attn = MixerMetaTokensAttention(config, swa=swa, kv_share=(kv_source is not None))
                 case _:
                     raise ValueError(f"Unknown attention type {config.local_attn_type}")
 
@@ -60,10 +55,12 @@ class Block(nn.Module):
         self.kv_source = kv_source
         self.out_proj = nn.Linear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
         #self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
-        self.attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
-        self.is_lin_attn_norm = config.rmsnorm
-        if not config.rmsnorm:
-            self.lin_attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
+        #self.attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
+        #self.lin_attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
+        #self.attn_norm = nn.RMSNorm(int(self.expand_factor*config.d_model))
+        #self.lin_attn_norm = nn.RMSNorm(int(self.expand_factor*config.d_model))
+        self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights)
+        self.postmixer_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights)
         self.mlp = MLP(config)
         
         # register here to not break torch_dynamo
@@ -79,18 +76,18 @@ class Block(nn.Module):
         else:
             attn_cache, lin_attn_cache = None, None
 
-        hidden = self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)) # (B, L, d_model)
+        hidden = self.layer_norm_scaling * self.input_norm(x) # (B, L, d_model)
         
         # y_attn and y_lin_attn are (B, L, E*d_model)
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache)
         y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache)
-        y = F.rms_norm(y_attn, (int((hidden.size(-1)*self.expand_factor)),), self.attn_norm)
-        if not self.is_lin_attn_norm:
-            y = y + F.rms_norm(y_lin_attn, (int(hidden.size(-1)*self.expand_factor),), self.lin_attn_norm)
-        else :
-            y = y + y_lin_attn
+        y = y_attn + y_lin_attn
+        #y = F.rms_norm(y_attn, (int((hidden.size(-1)*self.expand_factor)),), self.attn_norm)
+        #y = y + F.rms_norm(y_lin_attn, (int(hidden.size(-1)*self.expand_factor),), self.lin_attn_norm)
+        #y = self.attn_norm(y_attn)
+        #y = y + self.lin_attn_norm(y_lin_attn)
         x = x + self.out_proj(y / 2)
-        x = x + self.mlp(self.layer_norm_scaling * F.rms_norm(x, (x.size(-1),)))
+        x = x + self.mlp(self.layer_norm_scaling * self.postmixer_norm(x))
         return x if cache is None else (x, (attn_cache, lin_attn_cache))
 
     def get_empty_cache(self):
@@ -168,11 +165,10 @@ class Dragon(nn.Module):
             wte = nn.Embedding(config.vocab_size, config.d_model),
             h = nn.ModuleList(blocks),
         ))
+        self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights)
+        self.final_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size,  dtype=torch.bfloat16, bias=False)
         #self.lm_head.weight.data.zero_()
-
-        if self.config.num_meta_tokens > 0:
-            self.meta_tokens = nn.Parameter(torch.randn(self.config.num_meta_tokens, self.config.d_model))
 
         self.apply(self._init_weights)
 
@@ -191,19 +187,13 @@ class Dragon(nn.Module):
         # forward the Dragon model itself
         x = self.transformer.wte(idx) # token embeddings of shape (B, L, d_model)
 
-        if self.config.num_meta_tokens > 0:
-            # add meta tokens
-            meta_tokens = self.meta_tokens.expand(B, -1, -1)
-            x = torch.cat((meta_tokens, x), dim=1) # (B, num_meta_tokens+L, d_model)
-            L += self.config.num_meta_tokens
-
         if self.config.use_patch_level_training:
             x = x.view(B, L//self.config.patch_size, self.config.patch_size, -1).mean(2) # (B, num_patches, D)
             x = x[:, :-1] # remove the last patch
             targets = targets[:, self.config.patch_size-1:-1] # targets is already shifted by one
             # so we remove only the first patch_size-1 tokens, as well as the last
 
-        x = F.rms_norm(x, (x.size(-1),))
+        x = self.input_norm(x)
 
         if caches is None:
             # regular forward pass
@@ -217,11 +207,7 @@ class Dragon(nn.Module):
                 if caches is not None:
                     caches[i] = cache
 
-        x = F.rms_norm(x, (x.size(-1),))
-
-        if self.config.num_meta_tokens > 0:
-            # remove meta tokens
-            x = x[:, self.config.num_meta_tokens:, :].contiguous() # (B, L, d_model)
+        x = self.final_norm(x)
 
         if just_logits:
             logits = self.lm_head(x)

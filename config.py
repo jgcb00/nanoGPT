@@ -15,13 +15,17 @@ class NanoConfig:
     n_heads : int = 6 # head dim 128 suggested by @Grad62304977
     n_layers : int = 12
     expand_factor : int = 1 # expand factor for Mamba/Dragon
-    attn_type : str = "normal" # normal, diff, nsa, metatokens
+    attn_type : str = "normal" # normal, diff, nsa
     local_attn_type: str = "normal"
     lin_attn_type: str = "mamba2" # mamba2, gdn
     global_attn_repart: str = "hymba" # hymba (beginning,middle,end), middle (3 parts, global @middle of each part)
     rope_theta_global: float = 10000.0
     rope_theta_local: float = 10000.0
-    layer_norm_scaling : bool = False # whether to scale layer norm by sqrt(layer_depth)
+    layer_norm_scaling: bool = False # whether to scale layer norm by sqrt(layer_depth)
+    rmsnorm_weights: bool = False
+    groupnorm_weights: bool = True
+    groupnorm_unique: bool = False # if False, groupnorm weights are shared among heads of same nature. if True, weights for each head.
+    groupnorm_unique_independent: bool = False # True=normalization is done indenpendently for each head, False=normalization is done jointly for all heads
     fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
 
     # Attention related
@@ -36,7 +40,8 @@ class NanoConfig:
     scalable_softmax: bool = False
     disable_scalable_softmax_for_local: bool = True
     rope_to_nope: bool = False # whether to use the rope-to-nope arch (2501.18795, ie disable RoPE in full attn layers) (only effective if use_swa=True)
-    num_meta_tokens: int = 0
+    use_gate_attn: bool = False # applies to all attentions (normal and diff)
+    norm_before_gate_attn: bool = False
 
     # NSA specific
     nsa_kernel_size: int = 32
@@ -122,7 +127,7 @@ class NanoConfig:
         # check for valid linear attention type
         assert self.lin_attn_type in ["mamba2", "gdn"]
         # check for valid optimizer type
-        assert self.optim in ["adamw", "spam", "muon", "stable-spam", "muon_moonlight"]
+        assert self.optim in ["adamw", "spam", "muon", "stable-spam", "muon_moonlight", "swan"]
         # check for valid n_heads
         assert self.d_model % self.n_heads == 0, "d_model must be divisible by n_heads"
         self.d_head = self.d_model // self.n_heads

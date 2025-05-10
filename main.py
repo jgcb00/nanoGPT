@@ -109,7 +109,14 @@ model = get_model(nconfig)
 num_params = sum(p.numel() for p in model.parameters())
 print0(f"number of parameters: {num_params}")
 nconfig.num_params = num_params
-model = model.to(torch.bfloat16)
+#model = model.to(torch.bfloat16)
+# only cast specific weights to bfloat16
+with torch.no_grad():
+    for module in model.modules():
+        if isinstance(module, torch.nn.Embedding):
+            module.weight.data = module.weight.data.to(torch.bfloat16)
+        if isinstance(module, torch.nn.Linear):
+            module.weight.data = module.weight.data.to(torch.bfloat16)
 model = torch.compile(model, dynamic=nconfig.slw_warmup_iters > 0 and not nconfig.lin_attn_type == "mamba2")
 model = model.cuda()
 
@@ -147,16 +154,6 @@ else:
     train_loader.reset()
 
 wsize = 0
-if nconfig.local_attn_type == "metatokens":
-    wsize = nconfig.swa_window_size
-    def attn_mask(b, h, q_idx, kv_idx):
-        causal = q_idx >= kv_idx
-        swa = q_idx - kv_idx <= wsize
-        prefix = kv_idx < nconfig.num_meta_tokens
-        return causal & (swa | prefix)
-    block_mask_local = create_block_mask(attn_mask, B=None, H=None, Q_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, KV_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, _compile=True)
-    for block in raw_model.transformer.h:
-        block.attn.block_mask = block_mask_local
 
 for step in range(nconfig.num_iterations + 1):
     last_step = (step == nconfig.num_iterations)
@@ -179,20 +176,6 @@ for step in range(nconfig.num_iterations + 1):
         window = nconfig.slw_increment * math.ceil(window / nconfig.slw_increment) # quantize
         window = int(min(window, nconfig.sequence_length)) # cap
         nconfig.slw_window = window
-
-        if nconfig.local_attn_type == "metatokens":
-            wsize = min(nconfig.slw_window, nconfig.swa_window_size)
-
-            if wsize != wsize_old:
-                def attn_mask(b, h, q_idx, kv_idx):
-                    causal = q_idx >= kv_idx
-                    swa = q_idx - kv_idx <= wsize
-                    prefix = kv_idx < nconfig.num_meta_tokens
-                    return causal & (swa | prefix)
-                block_mask_local = create_block_mask(attn_mask, B=None, H=None, Q_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, KV_LEN=nconfig.sequence_length+nconfig.num_meta_tokens, _compile=True)
-
-                for block in raw_model.transformer.h:
-                    block.attn.block_mask = block_mask_local
 
     # --------------- VALIDATION SECTION -----------------
     if (last_step or (nconfig.val_loss_every > 0 and step % nconfig.val_loss_every == 0)):

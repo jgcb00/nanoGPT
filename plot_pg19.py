@@ -26,15 +26,15 @@ args = tyro.cli(Args)
 plt.figure(figsize=(10, 6))
 for idx, rd in enumerate(args.run_dirs):
     per_token_loss = torch.load(rd / 'per_token_loss.pt', map_location='cpu')
-    window_size = 100
+    window_size = 500
     weights = np.ones(window_size) / window_size
     smoothed_loss = np.convolve(per_token_loss.numpy(), weights, mode='valid')
     x_values = np.arange(len(smoothed_loss))
     label = args.names[idx] if args.names else rd.name
     plt.plot(x_values, smoothed_loss, linewidth=2, label=label)
 
-y_min = 3.0
-y_max = 3.5
+y_min = 2.8
+y_max = 3.1
 plt.ylim(y_min, y_max)
 
 # Add other plot elements

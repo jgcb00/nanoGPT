@@ -3,9 +3,9 @@
 #SBATCH --ntasks-per-node=1 # number of tasks per node
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1         # number of gpus per node
-#SBATCH --time=02:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/1eval.err            # standard error file
-#SBATCH --output=logs/1eval.out           # standard output file
+#SBATCH --time=10:00:00              # time limits: here 1 hour
+#SBATCH --error=logs/2eval.err            # standard error file
+#SBATCH --output=logs/2eval.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -18,24 +18,13 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval.py \
-    --run_dir logs/exp14_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-adamw_98777723 \
+    --run_dir logs/exp14long_Dragon-L-GDN-independent_gn_unique-qk_norm-new_rmsnormweights-muon_7147bba5 \
     --tasks niah_single_3 \
-    --prompt_len 8192 \
+    --prompt_len 512,1024,2048,3074,4096,8192 \
 
 python eval.py \
-    --run_dir logs/exp14_Dragon-L-rope_to_nope-adamw_691e02b2 \
-    --tasks niah_single_3 \
-    --prompt_len 8192 \
-
-python eval.py \
-    --run_dir logs/exp14_Dragon-L-rope_to_nope-skyladder_0.6-adamw_a61ee694 \
-    --tasks niah_single_3 \
-    --prompt_len 8192 \
-
-python eval.py \
-    --run_dir logs/exp14_Dragon-L-rope_to_nope-skyladder-repart_middle-adamw_8357966b \
-    --tasks niah_single_3 \
-    --prompt_len 8192 \
+    --run_dir logs/exp14long_Dragon-L-GDN-independent_gn_unique-qk_norm-new_rmsnormweights-muon_7147bba5 \
+    --tasks hellaswag,swde,fda \
 
 # niah_single_3
 
