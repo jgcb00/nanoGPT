@@ -18,21 +18,5 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval_pg19.py \
-    --run_dir logs/exp13_Dragon-L-scalable_softmax-dff-deepseekinit-adamw_98dc1763 \
-    --num_samples 2048 \
-
-python eval_pg19.py \
-    --run_dir logs/exp13_Dragon-L-scalable_softmax-dff-deepseekinit-repart_middle-adamw_8192bc2a \
-    --num_samples 2048 \
-
-python eval_pg19.py \
-    --run_dir logs/exp13_Dragon-L-GDN-scalable_softmax-dff-deepseekinit-skyladder_0.6-adamw_ad2556a5 \
-    --num_samples 2048 \
-
-python eval_pg19.py \
-    --run_dir logs/exp12_Dragon-L-full_diff-adamw_16af55eb \
-    --num_samples 2048 \
-
-python eval_pg19.py \
-    --run_dir logs/exp12_Dragon-L-diff_for_full-adamw_f0998ab9 \
+    --run_dir logs/exp14long_Dragon-L-GDN-independent_gn_unique-qk_norm_for_local-new_rmsnormweights-adamw_64266a14 \
     --num_samples 2048 \

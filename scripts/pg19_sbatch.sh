@@ -18,5 +18,9 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval_pg19.py \
-    --run_dir logs/exp14long_Dragon-L-GDN-hymba_norm-qk_norm-new_rmsnormweights-adamw_9eeff779 \
+    --run_dir logs/exp1long_GPT2-L-new_codebase-skyladder-adamw_8f6490ad \
+    --num_samples 2048 \
+
+python eval_pg19.py \
+    --run_dir logs/exp6long_GPT2-L-new_codebase-skyladder-adamw_f13d189e \
     --num_samples 2048 \

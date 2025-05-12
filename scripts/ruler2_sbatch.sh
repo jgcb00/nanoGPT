@@ -18,12 +18,12 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval.py \
-    --run_dir logs/exp14long_Dragon-L-GDN-independent_gn_unique-qk_norm-new_rmsnormweights-muon_7147bba5 \
+    --run_dir logs/exp6long_GPT2-L-new_codebase-skyladder-adamw_f13d189e \
     --tasks niah_single_3 \
     --prompt_len 512,1024,2048,3074,4096,8192 \
 
 python eval.py \
-    --run_dir logs/exp14long_Dragon-L-GDN-independent_gn_unique-qk_norm-new_rmsnormweights-muon_7147bba5 \
+    --run_dir logs/exp6long_GPT2-L-new_codebase-skyladder-adamw_f13d189e \
     --tasks hellaswag,swde,fda \
 
 # niah_single_3

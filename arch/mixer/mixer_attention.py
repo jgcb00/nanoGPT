@@ -89,13 +89,14 @@ class MixerAttention(nn.Module):
         self.use_gate = config.use_gate_attn
         assert self.d_model % self.n_heads == 0
 
-        if self.config.groupnorm_unique:
-            if not self.config.groupnorm_unique_independent:
-                self.group_norm = nn.RMSNorm((self.n_heads, self.d_head), elementwise_affine=config.groupnorm_weights, eps=1e-5)
+        if self.config.model == "dragon":
+            if self.config.groupnorm_unique:
+                if not self.config.groupnorm_unique_independent:
+                    self.group_norm = nn.RMSNorm((self.n_heads, self.d_head), elementwise_affine=config.groupnorm_weights, eps=1e-5)
+                else:
+                    self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads, d_head=self.d_head, eps=1e-5)
             else:
-                self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads, d_head=self.d_head, eps=1e-5)
-        else:
-            self.group_norm = nn.RMSNorm(self.d_head, elementwise_affine=config.groupnorm_weights, eps=1e-5)
+                self.group_norm = nn.RMSNorm(self.d_head, elementwise_affine=config.groupnorm_weights, eps=1e-5)
 
         self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
         if not kv_share: # only define kv projs if not sharing
@@ -177,16 +178,18 @@ class MixerAttention(nn.Module):
             y, _ = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
         else:
             raise ValueError
-        if self.config.norm_before_gate_attn:
-            y = self.group_norm(y)
-            if self.use_gate:
-                g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
-                y = y * g * F.sigmoid(g)
-        else:
-            if self.use_gate:
-                g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
-                y = y * g * F.sigmoid(g)
-            y = self.group_norm(y)
+        
+        if self.config.model == "dragon":
+            if self.config.norm_before_gate_attn:
+                y = self.group_norm(y)
+                if self.use_gate:
+                    g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
+                    y = y * g * F.sigmoid(g)
+            else:
+                if self.use_gate:
+                    g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
+                    y = y * g * F.sigmoid(g)
+                y = self.group_norm(y)
         y = y.contiguous().view(B, T, self.d_model*self.expand_factor)
         return y, cache
     
@@ -238,14 +241,17 @@ class MixerDiffAttention(nn.Module):
         self.lambda_q2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
         self.lambda_k2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
 
-        if self.config.groupnorm_unique:
-            if not self.config.groupnorm_unique_independent:
-                self.group_norm = nn.RMSNorm((self.n_heads//2, 2*self.head_dim), elementwise_affine=config.groupnorm_weights, eps=1e-5)
+        if self.config.model == "dragon":
+            if self.config.groupnorm_unique:
+                if not self.config.groupnorm_unique_independent:
+                    self.group_norm = nn.RMSNorm((self.n_heads//2, 2*self.head_dim), elementwise_affine=config.groupnorm_weights, eps=1e-5)
+                else:
+                    self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads//2, d_head=2*self.head_dim, eps=1e-5)
             else:
-                self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads//2, d_head=2*self.head_dim, eps=1e-5)
+                self.group_norm = nn.RMSNorm(2*self.head_dim, elementwise_affine=config.groupnorm_weights, eps=1e-5)
         else:
             self.group_norm = nn.RMSNorm(2*self.head_dim, elementwise_affine=config.groupnorm_weights, eps=1e-5)
-
+        
         assert self.d_model % self.n_heads == 0
         self.c_q = nn.Linear(self.d_model, self.n_heads*self.head_dim, bias=False)
         if not kv_share: # only define kv projs if not sharing
@@ -342,15 +348,18 @@ class MixerDiffAttention(nn.Module):
         lambda_full = lambda_1 - lambda_2 + self.lambda_init
         y = (y1 - lambda_full * y2).contiguous()
 
-        if self.config.norm_before_gate_attn:
-            y = self.group_norm(y)
-            if self.use_gate:
-                g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
-                y = y * g * F.sigmoid(g)
+        if self.config.model == "dragon":
+            if self.config.norm_before_gate_attn:
+                y = self.group_norm(y)
+                if self.use_gate:
+                    g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
+                    y = y * g * F.sigmoid(g)
+            else:
+                if self.use_gate:
+                    g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
+                    y = y * g * F.sigmoid(g)
+                y = self.group_norm(y)
         else:
-            if self.use_gate:
-                g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
-                y = y * g * F.sigmoid(g)
             y = self.group_norm(y)
 
         y = y * (1 - self.lambda_init)

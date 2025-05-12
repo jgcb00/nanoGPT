@@ -18,11 +18,11 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval.py \
-    --run_dir logs/exp14long_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-no_ss-rope1k-groupnorm_full_shared-adamw_6a10e542 \
+    --run_dir logs/ \
     --tasks hellaswag,swde,fda \
 
 python eval.py \
-    --run_dir logs/exp14long_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-no_ss-rope1k-groupnorm_full_shared-adamw_6a10e542 \
+    --run_dir logs/ \
     --tasks niah_single_3 \
     --prompt_len 512,1024,2048,3074,4096,8192 \
 

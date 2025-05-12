@@ -14,7 +14,7 @@ from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 
 class Block(nn.Module):
-    def __init__(self, config : NanoConfig, swa: bool = False, layer_depth: int = 0, kv_source=None):
+    def __init__(self, config : NanoConfig, swa: bool = False, layer_depth: int = 1, kv_source=None):
         """
         swa: whether to use local attention/SWA for this block, or global
         kv_source: layer to get KV from, if any

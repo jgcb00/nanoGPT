@@ -117,7 +117,7 @@ with torch.no_grad():
             module.weight.data = module.weight.data.to(torch.bfloat16)
         if isinstance(module, torch.nn.Linear):
             module.weight.data = module.weight.data.to(torch.bfloat16)
-model = torch.compile(model, dynamic=nconfig.slw_warmup_iters > 0 and not nconfig.lin_attn_type == "mamba2")
+model = torch.compile(model, dynamic=nconfig.slw_warmup_iters > 0)
 model = model.cuda()
 
 print0(model)
