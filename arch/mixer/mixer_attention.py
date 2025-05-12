@@ -131,8 +131,6 @@ class MixerAttention(nn.Module):
             
             self.last_k, self.last_v = k, v
 
-        #return q,k,v
-        
         if self.scalable_softmax:
             # scalable-softmax (https://arxiv.org/abs/2501.19399): multiply q by s*log(n)
             log_pos = torch.arange(start_pos+1, start_pos+T+1, device=q.device).view(1, T, 1, 1).float().log()
