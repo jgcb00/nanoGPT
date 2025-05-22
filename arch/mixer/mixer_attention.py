@@ -89,14 +89,15 @@ class MixerAttention(nn.Module):
         self.use_gate = config.use_gate_attn
         assert self.d_model % self.n_heads == 0
 
-        if self.config.model == "dragon":
-            if self.config.groupnorm_unique:
-                if not self.config.groupnorm_unique_independent:
-                    self.group_norm = nn.RMSNorm((self.n_heads, self.d_head), elementwise_affine=config.groupnorm_weights, eps=1e-5)
+        if self.config.groupnorm:
+            if self.config.model == "dragon":
+                if self.config.groupnorm_unique:
+                    if not self.config.groupnorm_unique_independent:
+                        self.group_norm = nn.RMSNorm((self.n_heads, self.d_head), elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
+                    else:
+                        self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads, d_head=self.d_head, eps=config.eps_rmsnorm)
                 else:
-                    self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads, d_head=self.d_head, eps=1e-5)
-            else:
-                self.group_norm = nn.RMSNorm(self.d_head, elementwise_affine=config.groupnorm_weights, eps=1e-5)
+                    self.group_norm = nn.RMSNorm(self.d_head, elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
 
         self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
         if not kv_share: # only define kv projs if not sharing
@@ -109,8 +110,31 @@ class MixerAttention(nn.Module):
                 self.rotary = Rotary(self.d_head, base=self.config.rope_theta_global)
         if self.scalable_softmax:
             self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads))
+
         if self.use_gate:
-            self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
+            # gate projection
+            if self.config.gate_type_attn == "elementwise":
+                self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
+            elif self.config.gate_type_attn == "headwise":
+                self.g_proj = nn.Linear(self.d_model, self.n_heads, bias=False)
+            else:
+                raise ValueError(f"Unknown gate type: {self.config.gate_type_attn}")
+            
+            # activation function
+            if self.config.gate_act_attn == "silu":
+                self.act_func_gate = F.silu
+            elif self.config.gate_act_attn == "srelu":
+                self.act_func_gate = lambda g: F.relu(g).square()
+            elif self.config.gate_act_attn == "sigmoid":
+                self.act_func_gate = F.sigmoid
+            else:
+                raise ValueError(f"Unknown gate activation: {self.config.gate_act_attn}")
+
+        if self.qk_norm:
+            self.q_norm = nn.RMSNorm(self.d_head, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
+            if not kv_share:
+                self.k_norm = nn.RMSNorm(self.d_head, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
+
         self.last_k = None
         self.last_v = None
 
@@ -131,7 +155,8 @@ class MixerAttention(nn.Module):
 
             if self.rope:
                 cos, sin = self.rotary(q, start_pos)
-            q = F.rms_norm(q, (q.size(-1),)) if self.qk_norm else q # QK norm (only for q)
+            #q = F.rms_norm(q, (q.size(-1),)) if self.qk_norm else q # QK norm (only for q)
+            q = self.q_norm(q) if self.qk_norm else q
             if self.rope:
                 q = apply_rotary_emb(q, cos, sin) # RoPE
         else: # regular path
@@ -140,7 +165,8 @@ class MixerAttention(nn.Module):
             
             if self.rope:
                 cos, sin = self.rotary(q, start_pos)
-            q, k = (F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),))) if self.qk_norm else (q, k) # QK norm suggested by @Grad62304977
+            #q, k = (F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),))) if self.qk_norm else (q, k) # QK norm suggested by @Grad62304977
+            q, k = (self.q_norm(q), self.k_norm(k)) if self.qk_norm else (q, k)
             if self.rope:
                 q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
             
@@ -178,18 +204,27 @@ class MixerAttention(nn.Module):
             y, _ = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
         else:
             raise ValueError
-        
-        if self.config.model == "dragon":
-            if self.config.norm_before_gate_attn:
-                y = self.group_norm(y)
-                if self.use_gate:
-                    g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
-                    y = y * g * F.sigmoid(g)
+
+        if self.use_gate:
+            # gate
+            if self.config.gate_type_attn == "elementwise":
+                g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3)) # (B, L, H, D)
+            elif self.config.gate_type_attn == "headwise":
+                g = self.g_proj(hidden_states).view(B, T, y.size(2), 1) # (B, L, H, 1)
             else:
-                if self.use_gate:
-                    g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
-                    y = y * g * F.sigmoid(g)
+                raise ValueError(f"Unknown gate type: {self.config.gate_type_attn}")
+
+        if self.config.norm_before_gate_attn:
+            if self.config.groupnorm:
                 y = self.group_norm(y)
+            if self.use_gate:
+                y = y * self.act_func_gate(g)
+        else:
+            if self.use_gate:
+                y = y * self.act_func_gate(g)
+            if self.config.groupnorm:
+                y = self.group_norm(y)
+        
         y = y.contiguous().view(B, T, self.d_model*self.expand_factor)
         return y, cache
     
@@ -241,16 +276,22 @@ class MixerDiffAttention(nn.Module):
         self.lambda_q2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
         self.lambda_k2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
 
-        if self.config.model == "dragon":
-            if self.config.groupnorm_unique:
-                if not self.config.groupnorm_unique_independent:
-                    self.group_norm = nn.RMSNorm((self.n_heads//2, 2*self.head_dim), elementwise_affine=config.groupnorm_weights, eps=1e-5)
+        if self.qk_norm:
+            self.q_norm = nn.RMSNorm(self.head_dim, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
+            if not kv_share:
+                self.k_norm = nn.RMSNorm(self.head_dim, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
+
+        if self.config.groupnorm:
+            if self.config.model == "dragon":
+                if self.config.groupnorm_unique:
+                    if not self.config.groupnorm_unique_independent:
+                        self.group_norm = nn.RMSNorm((self.n_heads//2, 2*self.head_dim), elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
+                    else:
+                        self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads//2, d_head=2*self.head_dim, eps=config.eps_rmsnorm)
                 else:
-                    self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads//2, d_head=2*self.head_dim, eps=1e-5)
+                    self.group_norm = nn.RMSNorm(2*self.head_dim, elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
             else:
-                self.group_norm = nn.RMSNorm(2*self.head_dim, elementwise_affine=config.groupnorm_weights, eps=1e-5)
-        else:
-            self.group_norm = nn.RMSNorm(2*self.head_dim, elementwise_affine=config.groupnorm_weights, eps=1e-5)
+                self.group_norm = nn.RMSNorm(2*self.head_dim, elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
         
         assert self.d_model % self.n_heads == 0
         self.c_q = nn.Linear(self.d_model, self.n_heads*self.head_dim, bias=False)
@@ -264,8 +305,26 @@ class MixerDiffAttention(nn.Module):
                 self.rotary = Rotary(self.head_dim, base=self.config.rope_theta_global)
         if self.scalable_softmax:
             self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads, dtype=torch.float32))
+
         if self.use_gate:
-            self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
+            # gate projection
+            if self.config.gate_type_attn == "elementwise":
+                self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
+            elif self.config.gate_type_attn == "headwise":
+                self.g_proj = nn.Linear(self.d_model, self.n_heads//2, bias=False)
+            else:
+                raise ValueError(f"Unknown gate type: {self.config.gate_type_attn}")
+            
+            # activation function
+            if self.config.gate_act_attn == "silu":
+                self.act_func_gate = F.silu
+            elif self.config.gate_act_attn == "srelu":
+                self.act_func_gate = lambda g: F.relu(g).square()
+            elif self.config.gate_act_attn == "sigmoid":
+                self.act_func_gate = F.sigmoid
+            else:
+                raise ValueError(f"Unknown gate activation: {self.config.gate_act_attn}")
+
         self.last_k1 = None
         self.last_k2 = None
         self.last_v = None
@@ -287,7 +346,8 @@ class MixerDiffAttention(nn.Module):
 
             if self.rope:
                 cos, sin = self.rotary(q, start_pos)
-            q = F.rms_norm(q, (q.size(-1),)) if self.qk_norm else q # QK norm (only for q)
+            #q = F.rms_norm(q, (q.size(-1),)) if self.qk_norm else q # QK norm (only for q)
+            q = self.q_norm(q) if self.qk_norm else q
             if self.rope:
                 q = apply_rotary_emb(q, cos, sin) # RoPE
         else: # regular path
@@ -296,7 +356,8 @@ class MixerDiffAttention(nn.Module):
 
             if self.rope:
                 cos, sin = self.rotary(q, start_pos)
-            q, k = (F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),))) if self.qk_norm else (q, k) # QK norm suggested by @Grad62304977
+            #q, k = (F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),))) if self.qk_norm else (q, k) # QK norm suggested by @Grad62304977
+            q, k = (self.q_norm(q), self.k_norm(k)) if self.qk_norm else (q, k)
             if self.rope:
                 q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
             
@@ -348,21 +409,27 @@ class MixerDiffAttention(nn.Module):
         lambda_full = lambda_1 - lambda_2 + self.lambda_init
         y = (y1 - lambda_full * y2).contiguous()
 
-        if self.config.model == "dragon":
-            if self.config.norm_before_gate_attn:
-                y = self.group_norm(y)
-                if self.use_gate:
-                    g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
-                    y = y * g * F.sigmoid(g)
+        if self.use_gate:
+            # gate
+            if self.config.gate_type_attn == "elementwise":
+                g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3)) # (B, L, H, D)
+            elif self.config.gate_type_attn == "headwise":
+                g = self.g_proj(hidden_states).view(B, T, y.size(2), 1) # (B, L, H, 1)
             else:
-                if self.use_gate:
-                    g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3))
-                    y = y * g * F.sigmoid(g)
-                y = self.group_norm(y)
-        else:
-            y = self.group_norm(y)
+                raise ValueError(f"Unknown gate type: {self.config.gate_type_attn}")
 
-        y = y * (1 - self.lambda_init)
+        if self.config.norm_before_gate_attn:
+            if self.config.groupnorm:
+                y = self.group_norm(y)
+            if self.use_gate:
+                y = y * self.act_func_gate(g)
+        else:
+            if self.use_gate:
+                y = y * self.act_func_gate(g)
+            if self.config.groupnorm:
+                y = self.group_norm(y)
+
+        #y = y * (1 - self.lambda_init)
         # We found that group norm doesn't improve on long scale the results
         # y = F.rms_norm(y, (2*self.head_dim,)) * (1 - self.lambda_init) 
         y = y.view(B, T, self.d_model*self.expand_factor)

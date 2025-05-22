@@ -55,16 +55,21 @@ class Block(nn.Module):
         self.kv_source = kv_source
         self.out_proj = nn.Linear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
         #self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
-        #self.attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
-        #self.lin_attn_norm = torch.nn.Parameter(torch.ones(int(self.expand_factor*config.d_model)))
-        #self.attn_norm = nn.RMSNorm(int(self.expand_factor*config.d_model))
-        #self.lin_attn_norm = nn.RMSNorm(int(self.expand_factor*config.d_model))
-        self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights)
-        self.postmixer_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights)
+        self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
+        self.postmixer_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.mlp = MLP(config)
         
         # register here to not break torch_dynamo
-        self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth) if config.layer_norm_scaling else 1.0))
+        
+        if config.layer_norm_scaling and config.layer_norm_scaling == "simple":
+            self.register_buffer("layer_norm_scaling_1", torch.tensor(1 / math.sqrt(layer_depth)))
+            self.register_buffer("layer_norm_scaling_2", torch.tensor(1 / math.sqrt(layer_depth)))
+        elif config.layer_norm_scaling and config.layer_norm_scaling == "double":
+            self.register_buffer("layer_norm_scaling_1", torch.tensor(1 / math.sqrt(2*layer_depth-1)))
+            self.register_buffer("layer_norm_scaling_2", torch.tensor(1 / math.sqrt(2*layer_depth)))
+        else:
+            self.register_buffer("layer_norm_scaling_1", torch.tensor(1.0))
+            self.register_buffer("layer_norm_scaling_2", torch.tensor(1.0))
 
     def forward(self, x, cache=None):
         external_kv = None
@@ -76,18 +81,13 @@ class Block(nn.Module):
         else:
             attn_cache, lin_attn_cache = None, None
 
-        hidden = self.layer_norm_scaling * self.input_norm(x) # (B, L, d_model)
+        hidden = self.layer_norm_scaling_1 * self.input_norm(x) # (B, L, d_model)
         
         # y_attn and y_lin_attn are (B, L, E*d_model)
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache)
         y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache)
-        y = y_attn + y_lin_attn
-        #y = F.rms_norm(y_attn, (int((hidden.size(-1)*self.expand_factor)),), self.attn_norm)
-        #y = y + F.rms_norm(y_lin_attn, (int(hidden.size(-1)*self.expand_factor),), self.lin_attn_norm)
-        #y = self.attn_norm(y_attn)
-        #y = y + self.lin_attn_norm(y_lin_attn)
-        x = x + self.out_proj(y / 2)
-        x = x + self.mlp(self.layer_norm_scaling * self.postmixer_norm(x))
+        x = x + self.out_proj((y_attn + y_lin_attn) / 2)
+        x = x + self.mlp(self.layer_norm_scaling_2 * self.postmixer_norm(x))
         return x if cache is None else (x, (attn_cache, lin_attn_cache))
 
     def get_empty_cache(self):
@@ -165,10 +165,8 @@ class Dragon(nn.Module):
             wte = nn.Embedding(config.vocab_size, config.d_model),
             h = nn.ModuleList(blocks),
         ))
-        self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights)
-        self.final_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights)
+        self.final_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size,  dtype=torch.bfloat16, bias=False)
-        #self.lm_head.weight.data.zero_()
 
         self.apply(self._init_weights)
 
@@ -192,8 +190,6 @@ class Dragon(nn.Module):
             x = x[:, :-1] # remove the last patch
             targets = targets[:, self.config.patch_size-1:-1] # targets is already shifted by one
             # so we remove only the first patch_size-1 tokens, as well as the last
-
-        x = self.input_norm(x)
 
         if caches is None:
             # regular forward pass

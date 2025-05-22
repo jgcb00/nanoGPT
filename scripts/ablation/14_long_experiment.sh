@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment14_longrun_ind_gdn_unique_qknorm_for_local_newweights.err            # standard error file
-#SBATCH --output=logs/experiment14_longrun_ind_gdn_unique_qknorm_for_local_newweights.out           # standard output file
+#SBATCH --error=logs/experiment14_longrun_may12_noinputnorm_gdnattngate_elementwise_silu_gateb4norm.err            # standard error file
+#SBATCH --output=logs/experiment14_longrun_may12_noinputnorm_gdnattngate_elementwise_silu_gateb4norm.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -45,9 +45,14 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp14long_Dragon-L-GDN-independent_gn_unique-qk_norm_for_local-new_rmsnormweights-adamw \
-    --no-use_gate_attn \
-    --use_gate \
+    --run_name exp14long_Dragon-L-GDN-May12-no_input_norm-gdnattngate_elementwise_silu_gateb4norm-adamw \
+    --use_gate_attn \
+    --gate_type_attn elementwise \
+    --gate_act_attn silu \
+    --no-norm_before_gate_attn \
+    --layer_norm_scaling_type simple \
+    --mlp_expand 3 \
+    --eps_rmsnorm 1.0e-6 \
     --groupnorm_unique \
     --groupnorm_unique_independent \
     --rmsnorm_weights \

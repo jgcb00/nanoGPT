@@ -22,10 +22,19 @@ class NanoConfig:
     rope_theta_global: float = 10000.0
     rope_theta_local: float = 10000.0
     layer_norm_scaling: bool = False # whether to scale layer norm by sqrt(layer_depth)
+    layer_norm_scaling_type: str = "simple" # simple, double
     rmsnorm_weights: bool = False
+    groupnorm: bool = True
     groupnorm_weights: bool = True
     groupnorm_unique: bool = False # if False, groupnorm weights are shared among heads of same nature. if True, weights for each head.
     groupnorm_unique_independent: bool = False # True=normalization is done indenpendently for each head, False=normalization is done jointly for all heads
+    eps_rmsnorm: float = None
+    mlp_expand: int = 4 # expand factor for MLP
+    gate_act_attn: str = "silu" # silu, srelu, sigmoid
+    gate_type_attn: str = "elementwise" # elementwise, headwise
+    norm_before_gate_attn: bool = False
+    gate_act_gdn: str = "silu" # silu, srelu, sigmoid
+    gate_type_gdn: str = "elementwise" # elementwise, headwise
     fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
 
     # Attention related
@@ -41,7 +50,6 @@ class NanoConfig:
     disable_scalable_softmax_for_local: bool = True
     rope_to_nope: bool = False # whether to use the rope-to-nope arch (2501.18795, ie disable RoPE in full attn layers) (only effective if use_swa=True)
     use_gate_attn: bool = False # applies to all attentions (normal and diff)
-    norm_before_gate_attn: bool = False
 
     # NSA specific
     nsa_kernel_size: int = 32

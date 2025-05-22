@@ -4,13 +4,12 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4         # number of gpus per node
 #SBATCH --time=24:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/experiment14_independent_gn_unique_qknorm_for_local_newrmsnormweights.err            # standard error file
-#SBATCH --output=logs/experiment14_independent_gn_unique_qknorm_for_local_newrmsnormweights.out           # standard output file
+#SBATCH --error=logs/experiment14_may12_normb4gate_both.err            # standard error file
+#SBATCH --output=logs/experiment14_may12_normb4gate_both.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
 module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
-
 source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/activate
 
 export WANDB_MODE=offline
@@ -45,10 +44,18 @@ DISTRIBUTED_ARGS=(
 # BS = 297459
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp14_Dragon-L-GDN-rope_to_nope-skyladder-repart_middle-ss_warmedup-rope1k-independent_gn_unique-qk_norm-new_rmsnormweights-adamw \
+    --run_name exp14_Dragon-L-may12-gdnattn_gate_elementwise_headspecific_normb4gate_silu-noGNweights-adamw \
+    --groupnorm \
+    --no-groupnorm_weights \
+    --use_gate_attn \
+    --gate_type_attn elementwise \
+    --gate_act_attn silu \
+    --norm_before_gate_attn \
+    --norm_before_gate \
+    --layer_norm_scaling_type simple \
+    --mlp_expand 3 \
+    --eps_rmsnorm 1.0e-6 \
     --rope_to_nope \
-    --no-use_gate_attn \
-    --use_gate \
     --groupnorm_unique \
     --groupnorm_unique_independent \
     --rmsnorm_weights \

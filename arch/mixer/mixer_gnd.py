@@ -132,20 +132,32 @@ class MixerGatedDeltaNet(nn.Module):
             nn.init.uniform_(self.v_conv1d.weight, -self.conv_init, self.conv_init)
 
         if self.use_gate:
-            self.g_proj = nn.Linear(self.d_model, self.value_dim, bias=False)
-            if config.rmsnorm:
-                self.o_norm = FusedRMSNormSwishGate(self.head_v_dim, eps=norm_eps) # norm(x) * f(z)
-        else:
-            if config.rmsnorm:
-                self.o_norm = RMSNorm(self.head_v_dim, eps=norm_eps)
-
-        if self.config.groupnorm_unique:
-            if not self.config.groupnorm_unique_independent:
-                self.group_norm = nn.RMSNorm((self.n_heads, self.head_v_dim), elementwise_affine=config.groupnorm_weights, eps=1e-5)
+            # gate projection
+            if self.config.gate_type_gdn == "elementwise":
+                self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
+            elif self.config.gate_type_gdn == "headwise":
+                self.g_proj = nn.Linear(self.d_model, self.n_heads, bias=False)
             else:
-                self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads, d_head=self.head_v_dim, eps=1e-5)
-        else:
-            self.group_norm = nn.RMSNorm(self.head_v_dim, elementwise_affine=config.groupnorm_weights, eps=1e-5)
+                raise ValueError(f"Unknown gate type: {self.config.gate_type_gdn}")
+
+            # activation function
+            if self.config.gate_act_gdn == "silu":
+                self.act_func_gate = F.silu
+            elif self.config.gate_act_gdn == "srelu":
+                self.act_func_gate = lambda g: F.relu(g).square()
+            elif self.config.gate_act_gdn == "sigmoid":
+                self.act_func_gate = F.sigmoid
+            else:
+                raise ValueError(f"Unknown gate activation: {self.config.gate_act_gdn}")
+
+        if self.config.groupnorm:
+            if self.config.groupnorm_unique:
+                if not self.config.groupnorm_unique_independent:
+                    self.group_norm = nn.RMSNorm((self.n_heads, self.head_v_dim), elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
+                else:
+                    self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads, d_head=self.head_v_dim, eps=config.eps_rmsnorm)
+            else:
+                self.group_norm = nn.RMSNorm(self.head_v_dim, elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
 
         self.apply(self._initialize_weights)
     
@@ -209,15 +221,25 @@ class MixerGatedDeltaNet(nn.Module):
             ) # (b t h d) where d is head_v_dim
         
         if self.use_gate:
-            g = rearrange(self.g_proj(hidden_states), '... (h d) -> ... h d', d=self.head_v_dim)
-            if self.config.rmsnorm:
-                o = self.o_norm(o, g)
+            # gate
+            if self.config.gate_type_gdn == "elementwise":
+                g = self.g_proj(hidden_states).view(o.size(0), o.size(1), o.size(2), o.size(3)) # (B, L, H, D)
+            elif self.config.gate_type_gdn == "headwise":
+                g = self.g_proj(hidden_states).view(o.size(0), o.size(1), o.size(2), 1) # (B, L, H, 1)
             else:
-                o = o * g * F.sigmoid(g)
+                raise ValueError(f"Unknown gate type: {self.config.gate_type_gdn}")
+
+        if self.config.norm_before_gate:
+            if self.config.groupnorm:
+                o = self.group_norm(o)
+            if self.use_gate:
+                o = o * self.act_func_gate(g)
         else:
-            if self.config.rmsnorm:
-                o = self.o_norm(o)
-        o = self.group_norm(o)
+            if self.use_gate:
+                o = o * self.act_func_gate(g)
+            if self.config.groupnorm:
+                o = self.group_norm(o)
+
         o = rearrange(o, 'b t h d -> b t (h d)').contiguous()
         return o, (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
     

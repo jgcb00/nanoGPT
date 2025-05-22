@@ -3,9 +3,9 @@
 #SBATCH --ntasks-per-node=1 # number of tasks per node
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1         # number of gpus per node
-#SBATCH --time=10:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/1eval.err            # standard error file
-#SBATCH --output=logs/1eval.out           # standard output file
+#SBATCH --time=20:00:00              # time limits: here 1 hour
+#SBATCH --error=logs/1eval_deux.err            # standard error file
+#SBATCH --output=logs/1eval_deux.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -18,13 +18,19 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval.py \
-    --run_dir logs/exp1long_GPT2-L-new_codebase-skyladder-adamw_8f6490ad \
+    --run_dir logs/exp14_Dragon-L-may12-attn_gate_elementwise_headspecific_norm4gate_silu-bis-adamw_afffae2b \
     --tasks niah_single_3 \
     --prompt_len 512,1024,2048,3074,4096,8192 \
 
 python eval.py \
-    --run_dir logs/exp1long_GPT2-L-new_codebase-skyladder-adamw_8f6490ad \
-    --tasks hellaswag,swde,fda \
+    --run_dir logs/exp14_Dragon-L-may12-attn_gate_elementwise_headspecific_norm4gate_silu-ter-adamw_c4e53ca7 \
+    --tasks niah_single_3 \
+    --prompt_len 512,1024,2048,3074,4096,8192 \
+
+python eval.py \
+    --run_dir logs/exp14_Dragon-L-may12-attn_gate_elementwise_headspecific_real_gateb4norm_silu-quater-adamw_0f6b2b00 \
+    --tasks niah_single_3 \
+    --prompt_len 512,1024,2048,3074,4096,8192 \
 
 # niah_single_3
 
