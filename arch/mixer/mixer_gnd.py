@@ -44,7 +44,7 @@ class MixerGatedDeltaNet(nn.Module):
         self.conv_init = conv_init
 
         self.n_heads = config.n_heads
-        self.d_head = int(self.d_model * (self.expand_factor/2)) // self.n_heads
+        self.d_head = int(self.d_model * (self.expand_factor/2)) // self.n_heads #todo: change this
 
         self.key_dim = self.n_heads * self.d_head
         self.value_dim = self.key_dim * self.expand_v
@@ -131,36 +131,14 @@ class MixerGatedDeltaNet(nn.Module):
             nn.init.uniform_(self.k_conv1d.weight, -self.conv_init, self.conv_init)
             nn.init.uniform_(self.v_conv1d.weight, -self.conv_init, self.conv_init)
 
-        if self.use_gate:
-            # gate projection
-            if self.config.gate_type_gdn == "elementwise":
-                self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
-            elif self.config.gate_type_gdn == "headwise":
-                self.g_proj = nn.Linear(self.d_model, self.n_heads, bias=False)
-            else:
-                raise ValueError(f"Unknown gate type: {self.config.gate_type_gdn}")
+        self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
+        self.act_func_gate = F.silu
 
-            # activation function
-            if self.config.gate_act_gdn == "silu":
-                self.act_func_gate = F.silu
-            elif self.config.gate_act_gdn == "srelu":
-                self.act_func_gate = lambda g: F.relu(g).square()
-            elif self.config.gate_act_gdn == "sigmoid":
-                self.act_func_gate = F.sigmoid
-            else:
-                raise ValueError(f"Unknown gate activation: {self.config.gate_act_gdn}")
-
-        if self.config.groupnorm:
-            if self.config.groupnorm_unique:
-                if not self.config.groupnorm_unique_independent:
-                    self.group_norm = nn.RMSNorm((self.n_heads, self.head_v_dim), elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
-                else:
-                    self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads, d_head=self.head_v_dim, eps=config.eps_rmsnorm)
-            else:
-                self.group_norm = nn.RMSNorm(self.head_v_dim, elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
+        self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads, d_head=self.head_v_dim, eps=config.eps_rmsnorm)
 
         self.apply(self._initialize_weights)
     
+    # TODO: what does this do here? shoudl be n(0, 0.006) as per deepseek. check official FLA
     def _initialize_weights(self, module: nn.Module):
         if isinstance(module, nn.Linear):
             nn.init.xavier_uniform_(module.weight, gain=2 ** -2.5)

@@ -1,15 +1,18 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from config import NanoConfig
 
+import transformer_engine as te
+
 class MLP(nn.Module):
 
-    def __init__(self, config: NanoConfig):
+    def __init__(self, config: NanoConfig, tp_group: torch.distributed.ProcessGroup, tp_size: int, device: torch.device):
         super().__init__()
-        self.c_fc    = nn.Linear(config.d_model, config.mlp_expand * config.d_model, bias=False)
-        self.c_proj  = nn.Linear(config.mlp_expand * config.d_model, config.d_model, bias=False)
-        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        # todo: pass init method
+        self.c_fc = te.pytorch.Linear(config.d_model, config.mlp_expand * config.d_model, bias=False, parallel_mode="column", tp_group=tp_group, tp_size=tp_size, device=device)
+        self.c_proj = te.pytorch.Linear(config.mlp_expand * config.d_model, config.d_model, bias=False, parallel_mode="row", tp_group=tp_group, tp_size=tp_size, device=device)
 
     def forward(self, x):
         x = self.c_fc(x)

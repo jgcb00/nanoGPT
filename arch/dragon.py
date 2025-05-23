@@ -95,72 +95,30 @@ class Block(nn.Module):
         return (self.attn.get_empty_cache(), self.lin_attn.get_empty_cache())
 
 class Dragon(nn.Module):
-    def __init__(self, config: NanoConfig):
+    def __init__(self, config: NanoConfig, tp_group: torch.distributed.ProcessGroup, tp_size: int, device: torch.device):
         super().__init__()
         self.config = config
 
-        # TODO: fuse the two loops?
-
-        if self.config.global_attn_repart == "hymba":
-            swas : List[bool] = [] # whether to use swa for each layer
-            for i in range(config.n_layers):
-                layer_depth = i + 1
-
-                if config.use_swa:
-                    is_first = layer_depth == 1
-                    is_middle = layer_depth == (config.n_layers + 1) // 2
-                    is_last = layer_depth == config.n_layers
-                    swa = not (is_first or is_middle or is_last)
-                else:
-                    swa = False
-                    
-                swas.append(swa)
-
-            blocks : List[Block] = []
-            for i in range(config.n_layers):
-                layer_depth = i + 1
-                is_local = swas[i]
-                kv_source = None
-
-                if not config.use_kv_sharing:
-                    blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
-                    continue
-                
-                # KV sharing strategy
-                if config.use_swa:
-                    # global/local attn: share kv between consecutive local layers (globals are isolated kv-wise)
-                    if is_local and i > 0 and swas[i-1]: # prev is local
-                        if blocks[i-1].kv_source is None: # prev doesn't have kv source
-                            kv_source = blocks[i-1]
-                else:
-                    # full global attn: share between every 2 layers
-                    if i > 0 and i % 2 == 1: # odd layers get KV from previous even layer
-                        kv_source = blocks[i-1]
-                    
+        n = config.n_layers
+        base, rem = divmod(n, 3)
+        group_sizes = [base + (1 if i < rem else 0) for i in range(3)]
+        starts = [sum(group_sizes[:i]) for i in range(3)]
+        mids = {starts[i] + group_sizes[i] // 2 for i in range(3)}
+        swas = [i not in mids for i in range(n)]
+        blocks: List[Block] = []
+        for i in range(n):
+            layer_depth = i + 1
+            is_local = swas[i]
+            kv_source = None
+            if not config.use_kv_sharing:
                 blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
-        elif self.config.global_attn_repart == "middle":
-            n = config.n_layers
-            base, rem = divmod(n, 3)
-            group_sizes = [base + (1 if i < rem else 0) for i in range(3)]
-            starts = [sum(group_sizes[:i]) for i in range(3)]
-            mids = {starts[i] + group_sizes[i] // 2 for i in range(3)}
-            swas = [i not in mids for i in range(n)]
-            blocks: List[Block] = []
-            for i in range(n):
-                layer_depth = i + 1
-                is_local = swas[i]
-                kv_source = None
-                if not config.use_kv_sharing:
-                    blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
-                    continue
-                if is_local and i > 0 and swas[i-1]: # share kv cache between consecutive local layers
-                    prev = blocks[i-1]
-                    if prev.kv_source is None:
-                        kv_source = prev
-                blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
-        else:
-            raise NotImplementedError
-            
+                continue
+            if is_local and i > 0 and swas[i-1]: # share kv cache between consecutive local layers
+                prev = blocks[i-1]
+                if prev.kv_source is None:
+                    kv_source = prev
+            blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.d_model),
             h = nn.ModuleList(blocks),
@@ -205,99 +163,20 @@ class Dragon(nn.Module):
 
         x = self.final_norm(x)
 
+        return x # TODO: remove this line
+
         if just_logits:
             logits = self.lm_head(x)
             return logits            
 
-        if targets is not None: # if we are given some desired targets also calculate the loss
-            if self.config.use_patch_level_training:
-                if self.config.fused_loss_computation:
-
-                    # regular, modified
-                    """
-                    logits = self.lm_head(x)
-                    logits = logits.float() # use tf32/fp32 for logits
-
-                    targets = targets.reshape(-1, self.config.patch_size)
-
-                    loss = 0
-                    for i in range(self.config.patch_size):
-                        loss += F.cross_entropy(logits.view(-1, logits.size(-1)), targets[:, i], ignore_index=-1)
-                    loss /= self.config.patch_size"
-                    """
-
-                    # FusedLinearCrossEntropyLoss
-                    criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
-                    targets = targets.reshape(-1, self.config.patch_size)
-
-                    loss = 0
-                    for i in range(self.config.patch_size):
-                        loss += criterion(x, targets[:, i], self.lm_head.weight)
-                    loss /= self.config.patch_size
-
-                    # FusedCrossEntropyLoss
-                    """
-                    criterion = FusedCrossEntropyLoss(ignore_index=-1)
-                    logits = self.lm_head(x)
-                    logits = logits.float() # use tf32/fp32 for logits
-                    targets = targets.reshape(-1, self.config.patch_size)
-                    loss = 0
-                    for i in range(self.config.patch_size):
-                        loss += criterion(logits.view(-1, logits.size(-1)), targets[:, i])
-                    loss /= self.config.patch_size"
-                    """
-
-                else:
-                    logits = self.lm_head(x)
-                    logits = logits.float() # use tf32/fp32 for logits
-
-                    targets = targets.reshape(-1, self.config.patch_size)
-
-                    loss = 0
-                    log_probs = F.log_softmax(logits.view(-1, logits.size(-1)), dim=1)
-                    for i in range(self.config.patch_size):
-                        loss += F.nll_loss(log_probs, targets[:, i], ignore_index=-1)
-                    loss /= self.config.patch_size
+        if targets is not None: # if we are given some desired targets also calculate the loss    
+            if self.config.fused_loss_computation:
+                criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
+                loss = criterion(x, targets, self.lm_head.weight)
             else:
-                if self.config.fused_loss_computation and scores is not None:
-
-                    # x : (B, L, d_model)
-                    # targets : (B, L)
-                    # scores : (B, L)
-
-                    if self.config.scores_loss_coupling == "sqrt":
-                        x = x.to(torch.bfloat16)
-                        scores = scores.to(torch.bfloat16)
-                        scores = scores - 1.0
-                        scores = torch.where(scores < 0.3, scores.new_tensor(0.3), scores)
-                        scores = torch.sqrt(scores)
-                        scores[:, :32] = 1
-                        #print(scores[:, 2500:2520])
-                        loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)
-                        loss = loss * scores
-                        #print(loss)
-                        loss = torch.mean(loss.view(1, -1))
-                        #print(loss)
-                    elif self.config.scores_loss_coupling == "soft-rho1":
-                        x = x.to(torch.bfloat16)
-                        scores = scores.to(torch.bfloat16)
-
-                        unscaled_loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)
-
-                        alpha = 0.5
-                        smooth_weights = torch.sigmoid(alpha * (scores-scores.mean()))
-
-                        loss = (unscaled_loss * smooth_weights).sum() / smooth_weights.sum()
-                    else:
-                        raise ValueError(f"Unknown scores_loss_coupling {self.config.scores_loss_coupling}")
-                    
-                elif self.config.fused_loss_computation:
-                    criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
-                    loss = criterion(x, targets, self.lm_head.weight)
-                else:
-                    logits = self.lm_head(x)
-                    logits = logits.float() # use tf32/fp32 for logits
-                    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+                logits = self.lm_head(x)
+                logits = logits.float() # use tf32/fp32 for logits
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
             return loss
 
         elif caches is None: # inference without caching (not recommended)
