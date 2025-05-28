@@ -14,6 +14,7 @@ class NanoConfig:
     d_model : int = 768
     n_heads : int = 6 # head dim 128 suggested by @Grad62304977
     n_layers : int = 12
+    n_global_layers: int = 3
     expand_factor : int = 1 # expand factor for Mamba/Dragon
     attn_type : str = "normal" # normal, diff, nsa
     local_attn_type: str = "normal"

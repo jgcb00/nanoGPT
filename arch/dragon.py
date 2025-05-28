@@ -62,8 +62,8 @@ class Block(nn.Module):
         # register here to not break torch_dynamo
         
         if config.layer_norm_scaling and config.layer_norm_scaling == "simple":
-            self.register_buffer("layer_norm_scaling_1", torch.tensor(1 / math.sqrt(layer_depth)))
-            self.register_buffer("layer_norm_scaling_2", torch.tensor(1 / math.sqrt(layer_depth)))
+            self.register_buffer("layer_norm_scaling_1", torch.tensor(1 / math.sqrt(layer_depth+1)))
+            self.register_buffer("layer_norm_scaling_2", torch.tensor(1 / math.sqrt(layer_depth+1)))
         elif config.layer_norm_scaling and config.layer_norm_scaling == "double":
             self.register_buffer("layer_norm_scaling_1", torch.tensor(1 / math.sqrt(2*layer_depth-1)))
             self.register_buffer("layer_norm_scaling_2", torch.tensor(1 / math.sqrt(2*layer_depth)))
@@ -140,10 +140,11 @@ class Dragon(nn.Module):
                 blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
         elif self.config.global_attn_repart == "middle":
             n = config.n_layers
-            base, rem = divmod(n, 3)
-            group_sizes = [base + (1 if i < rem else 0) for i in range(3)]
-            starts = [sum(group_sizes[:i]) for i in range(3)]
-            mids = {starts[i] + group_sizes[i] // 2 for i in range(3)}
+            G = getattr(config, "num_global_layers", 3)  # number of global layers
+            base, rem = divmod(n, G)
+            group_sizes = [base + (1 if i < rem else 0) for i in range(G)]
+            starts = [sum(group_sizes[:i]) for i in range(G)]
+            mids = {starts[i] + group_sizes[i] // 2 for i in range(G)}
             swas = [i not in mids for i in range(n)]
             blocks: List[Block] = []
             for i in range(n):
@@ -151,10 +152,12 @@ class Dragon(nn.Module):
                 is_local = swas[i]
                 kv_source = None
                 if not config.use_kv_sharing:
-                    blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+                    blocks.append(Block(config, swa=is_local, layer_depth=layer_depth))
                     continue
-                if is_local and i > 0 and swas[i-1]: # share kv cache between consecutive local layers
-                    prev = blocks[i-1]
+
+                # share kv cache between consecutive local layers
+                if is_local and i > 0 and swas[i-1]:
+                    prev = blocks[-1]
                     if prev.kv_source is None:
                         kv_source = prev
                 blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
