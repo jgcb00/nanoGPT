@@ -70,43 +70,6 @@ def apply_rotary_emb(x, cos, sin):
     y2 = x1 * (-sin) + x2 * cos
     return torch.cat([y1, y2], 3).type_as(x)
 
-def manual_attention(q, k, v, wsize):
-    """
-    q: (B, T, H, Dh)
-    k, v: (B, S, H, Dh)
-    wsize: int, window size in tokens (<=0 for full history)
-    returns y: (B, T, H, Dh)
-    """
-    B, T, H, Dhq = q.size()
-    _, _, _, Dhv = v.size()
-    S = k.size(1)
-
-    # reshape to (B*H, T, Dh) and (B*H, S, Dh)
-    q_ = q.transpose(1, 2).reshape(B*H, T, Dhq)
-    k_ = k.transpose(1, 2).reshape(B*H, S, Dhq)
-    v_ = v.transpose(1, 2).reshape(B*H, S, Dhv)
-
-    # 1) Scaled dot-product
-    scores = torch.bmm(q_, k_.transpose(1, 2)) / math.sqrt(Dhq)  # (B*H, T, S)
-
-    # 2) Causal + optional sliding window mask
-    # full causal mask
-    mask = torch.tril(torch.ones(T, S, device=q.device))
-    if wsize > 0:
-        # zero out positions older than wsize
-        mask = mask - torch.tril(mask, -wsize)
-    scores = scores.masked_fill(mask.unsqueeze(0) == 0, float('-inf'))
-
-    # 3) Softmax & dropout (if you use it)
-    attn = F.softmax(scores, dim=-1)
-
-    # 4) Weighted sum
-    y_ = torch.bmm(attn, v_)                             # (B*H, T, Dhv)
-
-    # reshape back to (B, T, H, Dhv)
-    y = y_.view(B, H, T, Dhv).transpose(1, 2)
-    return y
-
 class MixerAttention(nn.Module):
     def __init__(self, config: NanoConfig, swa: bool = False, kv_share: bool = False):
         super().__init__()
@@ -117,8 +80,6 @@ class MixerAttention(nn.Module):
         self.n_kv_repeats = self.n_heads // self.n_kv_heads
         self.d_model = config.d_model
         self.kv_share = kv_share
-        #self.expand_factor = config.expand_factor//2 if swa else config.expand_factor
-        #assert self.expand_factor==2, "should be 2 here"
         self.expand_factor = config.expand_factor
         self.d_head = (self.d_model*self.expand_factor) // self.n_heads
         self.swa, self.swa_window_size = swa, config.swa_window_size
@@ -289,16 +250,14 @@ class MixerAttention(nn.Module):
                 else:
                     wsize = -1
         
-        #if FLASH_ATTN_TYPE == "FA2":
-        #    y = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
-        #elif FLASH_ATTN_TYPE == "FA3":
-        #    y, _ = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
-        #else:
-        #    raise ValueError
-        print("TORCH", wsize)
-        y = manual_attention(q.bfloat16(), k.bfloat16(), v.bfloat16(), wsize).contiguous()
+        if FLASH_ATTN_TYPE == "FA2":
+            y = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        elif FLASH_ATTN_TYPE == "FA3":
+            y, _ = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        else:
+            raise ValueError
 
-        return y.float(), 0
+        return y.float(), cache
 
         if self.use_gate:
             # gate
@@ -336,7 +295,6 @@ class Attention(MixerAttention):
         
         # output projection
         self.c_proj = nn.Linear(self.expand_factor * self.d_model, self.d_model, bias=False)
-        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
     
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x, external_kv, cache)
@@ -352,8 +310,6 @@ class MixerDiffAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.n_kv_repeats = self.n_heads // self.n_kv_heads
         self.d_model = config.d_model
-        #self.expand_factor = config.expand_factor//2 if swa else config.expand_factor
-        #assert self.expand_factor==2, "should be 2 here"
         self.expand_factor = config.expand_factor
         self.head_dim = (self.d_model * self.expand_factor) // self.n_heads
         self.swa, self.swa_window_size = swa, config.swa_window_size
@@ -366,10 +322,10 @@ class MixerDiffAttention(nn.Module):
         self.register_buffer("lambda_init", torch.tensor(0.8 - 0.6 * math.exp(-0.3 * layer_depth)))
         
         head_dim = self.head_dim // 2
-        self.lambda_q1 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
-        self.lambda_k1 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
-        self.lambda_q2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
-        self.lambda_k2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_q1 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k1 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_q2 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k2 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
 
         if self.qk_norm:
             self.q_norm = nn.RMSNorm(self.head_dim, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
@@ -526,13 +482,11 @@ class MixerDiffAttention(nn.Module):
 
         k1, k2, v = repeat_kv(k1, self.n_kv_repeats), repeat_kv(k2, self.n_kv_repeats), repeat_kv(v, self.n_kv_repeats) # GQA
 
-        #y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
-        #y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
-        y1 = manual_attention(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), wsize)
-        y2 = manual_attention(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), wsize)
-        lambda_1 = torch.exp(torch.sum(self.lambda_q1*self.lambda_k1, dim=-1).float()).type_as(y1)
-        lambda_2 = torch.exp(torch.sum(self.lambda_q2*self.lambda_k2, dim=-1).float()).type_as(y2)
-        lambda_full = lambda_1 - lambda_2 + self.lambda_init
+        y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        lambda_1 = torch.exp((self.lambda_q1 * self.lambda_k1).sum(-1).float()) # (H)
+        lambda_2 = torch.exp((self.lambda_q2 * self.lambda_k2).sum(-1).float()) # (H)
+        lambda_full = (lambda_1 - lambda_2 + self.lambda_init).view(1, 1, -1, 1).type_as(y1)
         y = (y1 - lambda_full * y2).contiguous()
 
         return y.float(), 0
@@ -575,98 +529,9 @@ class DiffAttention(MixerDiffAttention):
         
         # output projection
         self.c_proj = nn.Linear(self.expand_factor * self.d_model, self.d_model, bias=False)
-        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
     
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x, external_kv, cache)
-        y = self.c_proj(y)
-        return y, cache
-    
-class MixerNativeSparseAttention(nn.Module):
-    def __init__(self, config: NanoConfig, swa=False):
-        assert swa==False
-
-        super().__init__()
-        self.n_heads = config.n_heads
-        self.n_kv_heads = config.n_kv_heads
-        self.d_model = config.d_model
-        self.expand_factor = config.expand_factor
-        #assert self.expand_factor==4, "should be 4 here"
-        #self.expand_factor = config.expand_factor
-        self.d_head = min(128, (self.d_model*self.expand_factor) // self.n_heads) # cap d_head to 128
-        self.expand_factor = (self.n_heads*self.d_head)/self.d_model # and recompute expand_factor
-        self.kernel_size = config.nsa_kernel_size
-        self.kernel_stride = config.nsa_kernel_stride
-        self.block_size = config.nsa_block_size
-        self.topn = config.nsa_topn
-        self.window_size = config.nsa_swa
-
-        assert self.d_model % self.n_heads == 0
-        
-        self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
-        self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
-        self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
-        self.c_g = nn.Linear(self.d_model, 3*self.n_heads, bias=False)
-        self.wk = torch.nn.Parameter(torch.zeros(self.n_kv_heads, self.kernel_size))
-        self.wv = torch.nn.Parameter(torch.zeros(self.n_kv_heads, self.kernel_size))
-        self.pe = torch.nn.Parameter(torch.zeros(self.n_kv_heads, self.kernel_size, self.d_head))
-        self.rotary = RotaryEmbedding(RopeConfig(head_dim=self.d_head, rope_theta=10000))
-
-    def forward(self, x, external_kv=None, cache=None):
-        B, T, _ = x.size()
-
-        # here, pass into B*L mode and create cu_seqlens
-        x = x.view(B*T, -1)
-        cu_seqlens = torch.arange(0, B*T+1, T, dtype=torch.int32, device=x.device)
-        seqlens = cu_seqlens[1:] - cu_seqlens[:-1]
-
-        # qkv proj
-        q = self.c_q(x).view(B*T, self.n_heads, self.d_head)
-        k = self.c_k(x).view(B*T, self.n_kv_heads, self.d_head)
-        v = self.c_v(x).view(B*T, self.n_kv_heads, self.d_head)
-        g_cmp, g_slc, g_swa = self.c_g(x).sigmoid().view(B*T, self.n_heads, 3).unbind(-1)
-
-        # no need to replicate k/v for GQA, this is handled in the attentions
-
-        # compression attention
-        #k_cmp, cu_seqlens_cmp = linear_compress(k, self.wk, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
-        #v_cmp, _ = linear_compress(v, self.wv, cu_seqlens, self.kernel_size, self.kernel_stride, None)
-
-        k_cmp, cu_seqlens_cmp = weightedpool_compress(k, self.wk, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
-        v_cmp, _ = weightedpool_compress(v, self.wv, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
-
-        #k_cmp, cu_seqlens_cmp = avgpool_compress(k, None, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
-        #v_cmp, _ = avgpool_compress(v, None, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
-
-        q = self.rotary(q, cu_seqlens)
-        k_cmp = self.rotary(k_cmp, cu_seqlens_cmp, stride=self.kernel_stride)
-        
-        compressed_seqlens = cu_seqlens_cmp[1:] - cu_seqlens_cmp[:-1]
-        o_cmp, topn_idx = compressed_attention(q, k_cmp, v_cmp, self.kernel_size, self.kernel_stride, self.block_size, self.topn, cu_seqlens, cu_seqlens_cmp, seqlens.max().item(), compressed_seqlens.max().item(), None, init_blocks=1, local_blocks=2)
-        o = g_cmp[..., None] * o_cmp
-
-        # selection attention
-        k = self.rotary(k, cu_seqlens)
-        o_slc = topk_sparse_attention(q, k, v, topn_idx, self.block_size, cu_seqlens, None)
-        o += g_slc[..., None] * o_slc
-
-        # local attention
-        o_swa = flash_attn.flash_attn_varlen_func(q, k, v, cu_seqlens, cu_seqlens, seqlens.max().item(), seqlens.max().item(), causal=True, window_size=(self.window_size, -1))
-        o += g_swa[..., None] * o_swa
-
-        o = o.view(B, T, int(self.d_model*self.expand_factor))
-        return o, None
-
-class NativeSparseAttention(MixerNativeSparseAttention):
-    def __init__(self, config: NanoConfig):
-        super().__init__(config)
-
-        # output projection
-        self.c_proj = nn.Linear(int(self.expand_factor*self.d_model), self.d_model, bias=False)
-        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
-
-    def forward(self, x, external_kv=None, cache=None):
-        y, cache = super().forward(x)
         y = self.c_proj(y)
         return y, cache
 

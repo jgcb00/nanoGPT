@@ -16,7 +16,7 @@ class NanoConfig:
     n_layers : int = 12
     n_global_layers: int = 3
     expand_factor : int = 1 # expand factor for Mamba/Dragon
-    attn_type : str = "normal" # normal, diff, nsa
+    attn_type : str = "normal" # normal, diff
     local_attn_type: str = "normal"
     lin_attn_type: str = "mamba2" # mamba2, gdn
     global_attn_repart: str = "hymba" # hymba (beginning,middle,end), middle (3 parts, global @middle of each part)
@@ -52,16 +52,6 @@ class NanoConfig:
     rope_to_nope: bool = False # whether to use the rope-to-nope arch (2501.18795, ie disable RoPE in full attn layers) (only effective if use_swa=True)
     use_gate_attn: bool = False # applies to all attentions (normal and diff)
 
-    # NSA specific
-    nsa_kernel_size: int = 32
-    nsa_kernel_stride: int = 16
-    nsa_block_size: int = 64
-    nsa_topn: int = 16
-    nsa_swa: int = 512
-
-    # Mamba and GatedDeltaNet related
-    rmsnorm: bool = False # whether to use an output norm (before proj)
-
     # Mamba related
     d_state: int = 128
     d_conv: int = 4
@@ -93,20 +83,12 @@ class NanoConfig:
     patch_training_fraction: float = 0.67
     input_bin : str = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
     input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
-
-    # scoring
-    scoring_bin: Union[str, None] = None # input .bin
-    scores_loss_coupling: str = "sqrt" # sqrt, soft-rho1
     
     # evaluation and logging
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     log_wandb : bool = False # whether to log to wandb
-
-    # special - for scores
-    is_scorer: bool = False # whether to use the model as a scorer (tied input+output, shifted data by 10B, will evaluate the first 10B tokens)
-    scoring: bool = False # whether the model is scoring (used for the output of GPT)
 
     # used during training
     slw_window: int = 0
@@ -132,7 +114,7 @@ class NanoConfig:
         # check for valid model
         assert self.model in ["gpt", "dragon", "gated-delta-net", "mamba2"]
         # check for valid attention type
-        assert self.attn_type in ["normal", "diff", "nsa"]
+        assert self.attn_type in ["normal", "diff"]
         # check for valid linear attention type
         assert self.lin_attn_type in ["mamba2", "gdn"]
         # check for valid optimizer type
@@ -147,13 +129,5 @@ class NanoConfig:
         if self.attn_type == "diff":
             assert self.n_heads % 2 == 0, "n_heads must be even when using diff attention"
             assert self.n_kv_heads % 2 == 0, "n_kv_heads must be even when using diff attention"
-        elif self.attn_type == "nsa":
-            assert (self.n_heads // self.n_kv_heads) % 16==0, "With NSA, n_heads/n_kv_heads must be divisible by 16 to have decent performance."
-        assert self.rmsnorm == False, "rmsnorm is not supported in inference for now"
-
-        assert not(self.slw_warmup_iters > 0 and self.attn_type == "nsa"), "SLW is not supported with NSA attention"
-
-        if self.is_scorer:
-            assert self.model == "gpt"
 
         self.eval_benchmarks_tasks = self.eval_benchmarks_tasks.split(',')

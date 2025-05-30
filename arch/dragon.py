@@ -9,9 +9,10 @@ from cut_cross_entropy import linear_cross_entropy
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer.mixer_attention_mg import MixerAttention, MixerDiffAttention, MixerNativeSparseAttention
+from arch.mixer.mixer_attention_mg import MixerAttention, MixerDiffAttention
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
+from arch.utils import HeadWiseRMSNorm
 
 class Block(nn.Module):
     def __init__(self, config : NanoConfig, swa: bool = False, layer_depth: int = 1, kv_source=None):
@@ -27,8 +28,6 @@ class Block(nn.Module):
                     self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
                 case "diff":
                     self.attn = MixerDiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
-                case "nsa":
-                    self.attn = MixerNativeSparseAttention(config, swa=swa)
                 case _:
                     raise ValueError(f"Unknown attention type {config.attn_type}")
         else:
@@ -37,8 +36,6 @@ class Block(nn.Module):
                     self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
                 case "diff":
                     self.attn = MixerDiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
-                case "nsa":
-                    self.attn = MixerNativeSparseAttention(config, swa=swa)
                 case _:
                     raise ValueError(f"Unknown attention type {config.local_attn_type}")
 
@@ -55,6 +52,13 @@ class Block(nn.Module):
         self.kv_source = kv_source
         self.out_proj = nn.Linear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
         #self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+        
+        if isinstance(self.attn, MixerDiffAttention):
+            self.attn_group_norm = HeadWiseRMSNorm(n_heads=self.attn.n_heads//2, d_head=2*self.attn.head_dim, eps=config.eps_rmsnorm)
+        else:
+            self.attn_group_norm = HeadWiseRMSNorm(n_heads=self.attn.n_heads, d_head=self.attn.d_head, eps=config.eps_rmsnorm)
+        self.lin_attn_group_norm = HeadWiseRMSNorm(n_heads=self.lin_attn.n_heads, d_head=self.lin_attn.head_v_dim, eps=config.eps_rmsnorm)
+
         self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.postmixer_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.mlp = MLP(config)
@@ -71,8 +75,6 @@ class Block(nn.Module):
             self.register_buffer("layer_norm_scaling_1", torch.tensor(1.0))
             self.register_buffer("layer_norm_scaling_2", torch.tensor(1.0))
 
-        print("SCAAAAAALAR", self.layer_norm_scaling_1)
-
     def forward(self, x, cache=None):
         external_kv = None
         if self.kv_source is not None:
@@ -87,9 +89,9 @@ class Block(nn.Module):
         
         # y_attn and y_lin_attn are (B, L, E*d_model)
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache)
-        return y_attn.view(y_attn.size(0), y_attn.size(1), -1)
-        # return self.out_proj(y_attn.view(y_attn.size(0), y_attn.size(1), -1))
         y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache)
+        y_attn = self.attn_group_norm(y_attn).view(y_attn.size(0), y_attn.size(1), -1)
+        y_lin_attn = self.lin_attn_group_norm(y_lin_attn).view(y_lin_attn.size(0), y_lin_attn.size(1), -1)
         x = x + self.out_proj((y_attn + y_lin_attn) / 2)
         x = x + self.mlp(self.layer_norm_scaling_2 * self.postmixer_norm(x))
         return x if cache is None else (x, (attn_cache, lin_attn_cache))
@@ -144,31 +146,30 @@ class Dragon(nn.Module):
                 blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
         elif self.config.global_attn_repart == "middle":
             n = config.n_layers
-            G = getattr(config, "num_global_layers", 3)  # number of global layers
-            base, rem = divmod(n, G)
-            group_sizes = [base + (1 if i < rem else 0) for i in range(G)]
-            starts = [sum(group_sizes[:i]) for i in range(G)]
-            mids = {starts[i] + group_sizes[i] // 2 for i in range(G)}
-            swas = [i not in mids for i in range(n)]
-            blocks: List[Block] = []
-            blocks.append(Block(config, swa=False, layer_depth=1, kv_source=None))
-            """
-            pass
-            for i in range(n):
-                layer_depth = i + 1
-                is_local = swas[i]
-                kv_source = None
-                if not config.use_kv_sharing:
-                    blocks.append(Block(config, swa=is_local, layer_depth=layer_depth))
-                    continue
+            G = config.n_global_layers
+            swas = self.allocate_swas(n, G)
 
-                # share kv cache between consecutive local layers
-                if is_local and i > 0 and swas[i-1]:
-                    prev = blocks[-1]
-                    if prev.kv_source is None:
-                        kv_source = prev
-                blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
-            """
+            blocks: List[Block] = []
+            layer_depth = 1
+
+            for is_local in swas:
+                if is_local:
+                    # two local‐attention layers per “True”
+                    # first local
+                    first = Block(config, swa=True, layer_depth=layer_depth, kv_source=None)
+                    blocks.append(first)
+                    layer_depth += 1
+
+                    # second local, maybe sharing kv with the first
+                    kv_src = first if config.use_kv_sharing else None
+                    second = Block(config, swa=True, layer_depth=layer_depth, kv_source=kv_src)
+                    blocks.append(second)
+                    layer_depth += 1
+                else:
+                    # one global‐attention layer
+                    blk = Block(config, swa=False, layer_depth=layer_depth, kv_source=None)
+                    blocks.append(blk)
+                    layer_depth += 1
         else:
             raise NotImplementedError
             
@@ -180,6 +181,17 @@ class Dragon(nn.Module):
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
         self.apply(self._init_weights)
+
+    def allocate_swas(self, total_layers_count: int, num_global_attention_layers: int):
+        base, rem = divmod(total_layers_count - num_global_attention_layers, num_global_attention_layers)
+        assert base % 4 == 0, "Locals must be divisible by 4 for equal kv-sharing"
+        assert rem == 0, "Improper number of layers"
+        swas = []
+        for _ in range(num_global_attention_layers):
+            swas += [True] * (base // 4)   # local run
+            swas += [False]                # global
+            swas += [True] * (base // 4)   # local run
+        return swas
 
     def _init_weights(self, module: nn.Module):
 

@@ -208,9 +208,9 @@ class MixerGatedDeltaNet(nn.Module):
         g = -self.A_log.float().exp() * F.softplus(a_proj.float() + self.dt_bias)
 
         o, h_cache = chunk_gated_delta_rule(
-                        q=q,
-                        k=k,
-                        v=v,
+                        q=q.bfloat16(),
+                        k=k.bfloat16(),
+                        v=v.bfloat16(),
                         g=g,
                         beta=beta,
                         initial_state=h_cache,
@@ -228,7 +228,11 @@ class MixerGatedDeltaNet(nn.Module):
                 g = self.g_proj(hidden_states).view(o.size(0), o.size(1), o.size(2), 1) # (B, L, H, 1)
             else:
                 raise ValueError(f"Unknown gate type: {self.config.gate_type_gdn}")
+            
+            o = o * self.act_func_gate(g)
+        return o, (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
 
+        """
         if self.config.norm_before_gate:
             if self.config.groupnorm:
                 o = self.group_norm(o)
@@ -240,8 +244,9 @@ class MixerGatedDeltaNet(nn.Module):
             if self.config.groupnorm:
                 o = self.group_norm(o)
 
-        o = rearrange(o, 'b t h d -> b t (h d)').contiguous()
+        o = rearrange(o, 'b t h d -> b t h d').contiguous()
         return o, (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
+        """
     
     def get_empty_cache(self):
         return (None, None, None, None) # (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)

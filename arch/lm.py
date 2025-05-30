@@ -44,12 +44,13 @@ class NanoLM(LM):
         for request in tqdm.tqdm(requests):
             input_str, target_str = request.args
 
-            input_enc = self.enc.encode(input_str) # list of ints
-            target_enc = self.enc.encode(target_str)
-            len_input = len(input_enc)
-            len_target = len(target_enc)
+            input_ids  = self.enc.encode(input_str).ids
+            target_ids = self.enc.encode(target_str).ids
+            len_input = len(input_ids)
+            len_target = len(target_ids)
 
-            prompt = torch.tensor(input_enc+target_enc, dtype=torch.long, device=self.model.transformer.wte.weight.device).unsqueeze(0)
+            prompt_ids = input_ids + target_ids
+            prompt = torch.tensor(prompt_ids, dtype=torch.long, device=self.model.transformer.wte.weight.device).unsqueeze(0)
             x = prompt[:, :-1]
             y = prompt[:, 1:].clone()
             y[:, :len_input-1] = -1
