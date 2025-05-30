@@ -26,6 +26,9 @@ try:
 except ImportError:
     pass
 
+from transformer_engine.pytorch.attention import _SplitAlongDim
+SplitAlongDim = _SplitAlongDim.apply
+
 from config import NanoConfig
 from arch.utils import HeadWiseRMSNorm
 import math
@@ -76,8 +79,7 @@ class MixerAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.n_kv_repeats = self.n_heads // self.n_kv_heads
         self.d_model = config.d_model
-        #self.expand_factor = config.expand_factor//2 if swa else config.expand_factor
-        #assert self.expand_factor==2, "should be 2 here"
+        self.kv_share = kv_share
         self.expand_factor = config.expand_factor
         self.d_head = (self.d_model*self.expand_factor) // self.n_heads
         self.swa, self.swa_window_size = swa, config.swa_window_size
@@ -99,10 +101,9 @@ class MixerAttention(nn.Module):
                 else:
                     self.group_norm = nn.RMSNorm(self.d_head, elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
 
-        self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
-        if not kv_share: # only define kv projs if not sharing
-            self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
-            self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
+        proj_dim = self.d_head * (self.n_heads + 2 * (0 if kv_share else self.n_kv_heads))
+        self.linear_qkv = nn.Linear(self.d_model, proj_dim, bias=False)
+
         if self.rope:
             if self.swa:
                 self.rotary = Rotary(self.d_head, base=self.config.rope_theta_local) # 477=3k/(2pi)
@@ -134,9 +135,67 @@ class MixerAttention(nn.Module):
             self.q_norm = nn.RMSNorm(self.d_head, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
             if not kv_share:
                 self.k_norm = nn.RMSNorm(self.d_head, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
-
         self.last_k = None
         self.last_v = None
+
+    def get_query_key_value_tensors(self, hidden_states, key_value_states=None):
+        """
+        Derives `query`, `key` and `value` tensors from `hidden_states`.
+        """
+        # Attention heads [sq, b, h] --> [sq, b, ng * (np/ng + 2) * hn)]
+        mixed_qkv = self.linear_qkv(hidden_states)
+
+        # [sq, b, hp] --> [sq, b, ng, (np/ng + 2) * hn]
+        if self.kv_share:
+            # reshape to [..., num_query_groups, heads_per_group * head_dim]
+            q_dim = (self.n_heads // self.n_kv_heads) * self.d_head
+            new_shape = mixed_qkv.size()[:-1] + (self.n_kv_heads, q_dim)
+            query = mixed_qkv.view(*new_shape)
+            # final shape [seq, batch, num_heads, head_dim]
+            query = query.reshape(query.size(0), query.size(1), -1, self.d_head)
+
+            if self.qk_norm:
+                query = self.q_norm(query)
+
+            return query
+
+        new_tensor_shape = mixed_qkv.size()[:-1] + (
+            self.n_kv_heads,
+            (
+                (self.n_heads // self.n_kv_heads + 2)
+                * self.d_head
+            ),
+        )
+        mixed_qkv = mixed_qkv.view(*new_tensor_shape)
+
+        split_arg_list = [
+            (
+                self.n_heads
+                // self.n_kv_heads
+                * self.d_head
+            ),
+            self.d_head,
+            self.d_head,
+        ]
+
+        if SplitAlongDim is not None:
+            # [sq, b, ng, (np/ng + 2) * hn]
+            # --> [sq, b, ng, np/ng * hn], [sq, b, ng, hn], [sq, b, ng, hn]
+            (query, key, value) = SplitAlongDim(mixed_qkv, 3, split_arg_list)
+        else:
+            # [sq, b, ng, (np/ng + 2) * hn]
+            # --> [sq, b, ng, np/ng * hn], [sq, b, ng, hn], [sq, b, ng, hn]
+            (query, key, value) = torch.split(mixed_qkv, split_arg_list, dim=3)
+
+        # [sq, b, ng, np/ng * hn] -> [sq, b, np, hn]
+        query = query.reshape(query.size(0), query.size(1), -1, self.d_head)
+
+        if self.qk_norm:
+            query = self.q_norm(query)
+        if self.qk_norm:
+            key = self.k_norm(key)
+
+        return query, key, value
 
     def forward(self, hidden_states, external_kv=None, cache=None):
         # hidden_states: (B,T,D) -> y: (B,T,D)
@@ -146,28 +205,21 @@ class MixerAttention(nn.Module):
         x = hidden_states
 
         B, T, _ = x.size()
-        q = self.c_q(x).view(B, T, self.n_heads, self.d_head)
 
         start_pos = cache[2] if cache is not None else 0
         
         if external_kv is not None: # kv-sharing path
+            q = self.get_query_key_value_tensors(x)
             k, v = external_kv
 
             if self.rope:
                 cos, sin = self.rotary(q, start_pos)
-            #q = F.rms_norm(q, (q.size(-1),)) if self.qk_norm else q # QK norm (only for q)
-            q = self.q_norm(q) if self.qk_norm else q
-            if self.rope:
                 q = apply_rotary_emb(q, cos, sin) # RoPE
         else: # regular path
-            k = self.c_k(x).view(B, T, self.n_kv_heads, self.d_head)
-            v = self.c_v(x).view(B, T, self.n_kv_heads, self.d_head)
+            q, k, v = self.get_query_key_value_tensors(x)
             
             if self.rope:
                 cos, sin = self.rotary(q, start_pos)
-            #q, k = (F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),))) if self.qk_norm else (q, k) # QK norm suggested by @Grad62304977
-            q, k = (self.q_norm(q), self.k_norm(k)) if self.qk_norm else (q, k)
-            if self.rope:
                 q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
             
             self.last_k, self.last_v = k, v
@@ -205,6 +257,8 @@ class MixerAttention(nn.Module):
         else:
             raise ValueError
 
+        return y.float(), cache
+
         if self.use_gate:
             # gate
             if self.config.gate_type_attn == "elementwise":
@@ -241,7 +295,6 @@ class Attention(MixerAttention):
         
         # output projection
         self.c_proj = nn.Linear(self.expand_factor * self.d_model, self.d_model, bias=False)
-        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
     
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x, external_kv, cache)
@@ -257,8 +310,6 @@ class MixerDiffAttention(nn.Module):
         self.n_kv_heads = config.n_kv_heads
         self.n_kv_repeats = self.n_heads // self.n_kv_heads
         self.d_model = config.d_model
-        #self.expand_factor = config.expand_factor//2 if swa else config.expand_factor
-        #assert self.expand_factor==2, "should be 2 here"
         self.expand_factor = config.expand_factor
         self.head_dim = (self.d_model * self.expand_factor) // self.n_heads
         self.swa, self.swa_window_size = swa, config.swa_window_size
@@ -271,10 +322,10 @@ class MixerDiffAttention(nn.Module):
         self.register_buffer("lambda_init", torch.tensor(0.8 - 0.6 * math.exp(-0.3 * layer_depth)))
         
         head_dim = self.head_dim // 2
-        self.lambda_q1 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
-        self.lambda_k1 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
-        self.lambda_q2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
-        self.lambda_k2 = torch.nn.Parameter(torch.zeros(head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_q1 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k1 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_q2 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k2 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
 
         if self.qk_norm:
             self.q_norm = nn.RMSNorm(self.head_dim, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
@@ -294,10 +345,7 @@ class MixerDiffAttention(nn.Module):
                 self.group_norm = nn.RMSNorm(2*self.head_dim, elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
         
         assert self.d_model % self.n_heads == 0
-        self.c_q = nn.Linear(self.d_model, self.n_heads*self.head_dim, bias=False)
-        if not kv_share: # only define kv projs if not sharing
-            self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.head_dim, bias=False)
-            self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.head_dim, bias=False)
+        self.linear_qkv = nn.Linear(self.d_model, self.n_heads*self.head_dim + 2*self.n_kv_heads*self.head_dim, bias=False)
         if self.rope:
             if self.swa:
                 self.rotary = Rotary(self.head_dim, base=self.config.rope_theta_local) # 477=3k/(2pi)
@@ -324,10 +372,58 @@ class MixerDiffAttention(nn.Module):
                 self.act_func_gate = F.sigmoid
             else:
                 raise ValueError(f"Unknown gate activation: {self.config.gate_act_attn}")
+    
+    def get_query_key_value_tensors(self, hidden_states, key_value_states=None):
+        """
+        Derives `query`, `key` and `value` tensors from `hidden_states`.
+        """
+        # Attention heads [sq, b, h] --> [sq, b, ng * (np/ng + 2) * hn)]
+        mixed_qkv = self.linear_qkv(hidden_states)
 
-        self.last_k1 = None
-        self.last_k2 = None
-        self.last_v = None
+        # [sq, b, hp] --> [sq, b, ng, (np/ng + 2) * hn]
+        new_tensor_shape = mixed_qkv.size()[:-1] + (
+            self.n_kv_heads,
+            (
+                (self.n_heads // self.n_kv_heads + 2)
+                * self.head_dim
+            ),
+        )
+        mixed_qkv = mixed_qkv.view(*new_tensor_shape)
+
+        split_arg_list = [
+            (
+                self.n_heads
+                // self.n_kv_heads
+                * self.head_dim
+            ),
+            self.head_dim,
+            self.head_dim,
+        ]
+
+        if SplitAlongDim is not None:
+
+            # [sq, b, ng, (np/ng + 2) * hn]
+            # --> [sq, b, ng, np/ng * hn], [sq, b, ng, hn], [sq, b, ng, hn]
+            (query, key, value) = SplitAlongDim(mixed_qkv, 3, split_arg_list)
+        else:
+
+            # [sq, b, ng, (np/ng + 2) * hn]
+            # --> [sq, b, ng, np/ng * hn], [sq, b, ng, hn], [sq, b, ng, hn]
+            (query, key, value) = torch.split(mixed_qkv, split_arg_list, dim=3)
+
+        # [sq, b, ng, np/ng * hn] -> [sq, b, np, hn]
+        query = query.reshape(query.size(0), query.size(1), -1, self.head_dim)
+
+        # diff attn reshaping of v: 2 times less heads, dimension doubled
+        value = value.reshape(value.size(0), value.size(1), value.size(2)//2, 2*value.size(3))
+
+        if self.qk_norm:
+            query = self.q_norm(query)
+
+        if self.qk_norm:
+            key = self.k_norm(key)
+
+        return query, key, value
 
     def forward(self, hidden_states, external_kv=None, cache=None):
         # hidden_states: (B,T,D) -> y: (B,T,D)
@@ -337,35 +433,14 @@ class MixerDiffAttention(nn.Module):
         x = hidden_states
 
         B, T, _ = x.size()
-        q = self.c_q(x).view(B, T, self.n_heads, self.head_dim)
         
         start_pos = cache[3] if cache is not None else 0
         
-        if external_kv is not None: # kv-sharing path
-            k1, k2, v = external_kv
+        q, k, v = self.get_query_key_value_tensors(x)
 
-            if self.rope:
-                cos, sin = self.rotary(q, start_pos)
-            #q = F.rms_norm(q, (q.size(-1),)) if self.qk_norm else q # QK norm (only for q)
-            q = self.q_norm(q) if self.qk_norm else q
-            if self.rope:
-                q = apply_rotary_emb(q, cos, sin) # RoPE
-        else: # regular path
-            k = self.c_k(x).view(B, T, self.n_kv_heads, self.head_dim)
-            v = self.c_v(x).view(B, T, self.n_kv_heads//2, 2*self.head_dim)
-
-            if self.rope:
-                cos, sin = self.rotary(q, start_pos)
-            #q, k = (F.rms_norm(q, (q.size(-1),)), F.rms_norm(k, (k.size(-1),))) if self.qk_norm else (q, k) # QK norm suggested by @Grad62304977
-            q, k = (self.q_norm(q), self.k_norm(k)) if self.qk_norm else (q, k)
-            if self.rope:
-                q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
-            
-            # split k heads into two groups
-            k = k.view(B, T, 2, self.n_kv_heads//2, self.head_dim)
-            k1, k2 = k[:, :, 0], k[:, :, 1]
-            
-            self.last_k1, self.last_k2, self.last_v = k1, k2, v
+        if self.rope:
+            cos, sin = self.rotary(q, start_pos)
+            q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin) # RoPE
 
         wsize = self.swa_window_size if self.swa else -1
         if self.config.slw_window > 0:
@@ -386,9 +461,14 @@ class MixerDiffAttention(nn.Module):
             log_pos = pos.float().log() if wsize <= 0 else torch.clamp_max(pos.float(), wsize).log()
             q = (self.softmax_scaler.view(1, 1, -1, 1) * log_pos) * q
             
-        # split q heads into two groups
-        q = q.view(B, T, 2, self.n_heads//2, self.head_dim)
-        q1, q2 = q[:, :, 0], q[:, :, 1]
+        # split q,k heads into two groups
+        B, L, n_heads, d_head = q.size(0), q.size(1), q.size(2), q.size(3)
+        n_kv_heads = k.size(2)
+
+        q = q.view(B, L, n_heads, d_head)
+        q1, q2 = q[:, :, torch.arange(0, n_heads, 2)].contiguous(), q[:, :, torch.arange(1, n_heads, 2)].contiguous()
+        k = k.view(B, L, n_kv_heads, d_head)
+        k1, k2 = k[:, :, torch.arange(0, n_kv_heads, 2)].contiguous(), k[:, :, torch.arange(1, n_kv_heads, 2)].contiguous()
         
         new_pos = start_pos + T
         if cache is not None:
@@ -399,15 +479,17 @@ class MixerDiffAttention(nn.Module):
                 v = torch.cat([past_v, v], dim=1)
             
             cache = (k1, k2, v, new_pos)
-        
+
         k1, k2, v = repeat_kv(k1, self.n_kv_repeats), repeat_kv(k2, self.n_kv_repeats), repeat_kv(v, self.n_kv_repeats) # GQA
 
         y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
         y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
-        lambda_1 = torch.exp(torch.sum(self.lambda_q1*self.lambda_k1, dim=-1).float()).type_as(y1)
-        lambda_2 = torch.exp(torch.sum(self.lambda_q2*self.lambda_k2, dim=-1).float()).type_as(y2)
-        lambda_full = lambda_1 - lambda_2 + self.lambda_init
+        lambda_1 = torch.exp((self.lambda_q1 * self.lambda_k1).sum(-1).float()) # (H)
+        lambda_2 = torch.exp((self.lambda_q2 * self.lambda_k2).sum(-1).float()) # (H)
+        lambda_full = (lambda_1 - lambda_2 + self.lambda_init).view(1, 1, -1, 1).type_as(y1)
         y = (y1 - lambda_full * y2).contiguous()
+
+        return y.float(), 0
 
         if self.use_gate:
             # gate
@@ -447,98 +529,9 @@ class DiffAttention(MixerDiffAttention):
         
         # output projection
         self.c_proj = nn.Linear(self.expand_factor * self.d_model, self.d_model, bias=False)
-        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
     
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x, external_kv, cache)
-        y = self.c_proj(y)
-        return y, cache
-    
-class MixerNativeSparseAttention(nn.Module):
-    def __init__(self, config: NanoConfig, swa=False):
-        assert swa==False
-
-        super().__init__()
-        self.n_heads = config.n_heads
-        self.n_kv_heads = config.n_kv_heads
-        self.d_model = config.d_model
-        self.expand_factor = config.expand_factor
-        #assert self.expand_factor==4, "should be 4 here"
-        #self.expand_factor = config.expand_factor
-        self.d_head = min(128, (self.d_model*self.expand_factor) // self.n_heads) # cap d_head to 128
-        self.expand_factor = (self.n_heads*self.d_head)/self.d_model # and recompute expand_factor
-        self.kernel_size = config.nsa_kernel_size
-        self.kernel_stride = config.nsa_kernel_stride
-        self.block_size = config.nsa_block_size
-        self.topn = config.nsa_topn
-        self.window_size = config.nsa_swa
-
-        assert self.d_model % self.n_heads == 0
-        
-        self.c_q = nn.Linear(self.d_model, self.n_heads*self.d_head, bias=False)
-        self.c_k = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
-        self.c_v = nn.Linear(self.d_model, self.n_kv_heads*self.d_head, bias=False)
-        self.c_g = nn.Linear(self.d_model, 3*self.n_heads, bias=False)
-        self.wk = torch.nn.Parameter(torch.zeros(self.n_kv_heads, self.kernel_size))
-        self.wv = torch.nn.Parameter(torch.zeros(self.n_kv_heads, self.kernel_size))
-        self.pe = torch.nn.Parameter(torch.zeros(self.n_kv_heads, self.kernel_size, self.d_head))
-        self.rotary = RotaryEmbedding(RopeConfig(head_dim=self.d_head, rope_theta=10000))
-
-    def forward(self, x, external_kv=None, cache=None):
-        B, T, _ = x.size()
-
-        # here, pass into B*L mode and create cu_seqlens
-        x = x.view(B*T, -1)
-        cu_seqlens = torch.arange(0, B*T+1, T, dtype=torch.int32, device=x.device)
-        seqlens = cu_seqlens[1:] - cu_seqlens[:-1]
-
-        # qkv proj
-        q = self.c_q(x).view(B*T, self.n_heads, self.d_head)
-        k = self.c_k(x).view(B*T, self.n_kv_heads, self.d_head)
-        v = self.c_v(x).view(B*T, self.n_kv_heads, self.d_head)
-        g_cmp, g_slc, g_swa = self.c_g(x).sigmoid().view(B*T, self.n_heads, 3).unbind(-1)
-
-        # no need to replicate k/v for GQA, this is handled in the attentions
-
-        # compression attention
-        #k_cmp, cu_seqlens_cmp = linear_compress(k, self.wk, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
-        #v_cmp, _ = linear_compress(v, self.wv, cu_seqlens, self.kernel_size, self.kernel_stride, None)
-
-        k_cmp, cu_seqlens_cmp = weightedpool_compress(k, self.wk, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
-        v_cmp, _ = weightedpool_compress(v, self.wv, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
-
-        #k_cmp, cu_seqlens_cmp = avgpool_compress(k, None, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
-        #v_cmp, _ = avgpool_compress(v, None, cu_seqlens, self.kernel_size, self.kernel_stride, self.pe)
-
-        q = self.rotary(q, cu_seqlens)
-        k_cmp = self.rotary(k_cmp, cu_seqlens_cmp, stride=self.kernel_stride)
-        
-        compressed_seqlens = cu_seqlens_cmp[1:] - cu_seqlens_cmp[:-1]
-        o_cmp, topn_idx = compressed_attention(q, k_cmp, v_cmp, self.kernel_size, self.kernel_stride, self.block_size, self.topn, cu_seqlens, cu_seqlens_cmp, seqlens.max().item(), compressed_seqlens.max().item(), None, init_blocks=1, local_blocks=2)
-        o = g_cmp[..., None] * o_cmp
-
-        # selection attention
-        k = self.rotary(k, cu_seqlens)
-        o_slc = topk_sparse_attention(q, k, v, topn_idx, self.block_size, cu_seqlens, None)
-        o += g_slc[..., None] * o_slc
-
-        # local attention
-        o_swa = flash_attn.flash_attn_varlen_func(q, k, v, cu_seqlens, cu_seqlens, seqlens.max().item(), seqlens.max().item(), causal=True, window_size=(self.window_size, -1))
-        o += g_swa[..., None] * o_swa
-
-        o = o.view(B, T, int(self.d_model*self.expand_factor))
-        return o, None
-
-class NativeSparseAttention(MixerNativeSparseAttention):
-    def __init__(self, config: NanoConfig):
-        super().__init__(config)
-
-        # output projection
-        self.c_proj = nn.Linear(int(self.expand_factor*self.d_model), self.d_model, bias=False)
-        #self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
-
-    def forward(self, x, external_kv=None, cache=None):
-        y, cache = super().forward(x)
         y = self.c_proj(y)
         return y, cache
 

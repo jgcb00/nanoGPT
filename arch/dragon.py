@@ -9,7 +9,7 @@ from cut_cross_entropy import linear_cross_entropy
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer.mixer_attention_mg import MixerAttention, MixerDiffAttention
+from nanoGPT.arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 from arch.utils import HeadWiseRMSNorm
