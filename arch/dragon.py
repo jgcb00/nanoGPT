@@ -9,7 +9,7 @@ from cut_cross_entropy import linear_cross_entropy
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention, MixerNativeSparseAttention
+from arch.mixer.mixer_attention_mg import MixerAttention, MixerDiffAttention, MixerNativeSparseAttention
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 
@@ -71,6 +71,8 @@ class Block(nn.Module):
             self.register_buffer("layer_norm_scaling_1", torch.tensor(1.0))
             self.register_buffer("layer_norm_scaling_2", torch.tensor(1.0))
 
+        print("SCAAAAAALAR", self.layer_norm_scaling_1)
+
     def forward(self, x, cache=None):
         external_kv = None
         if self.kv_source is not None:
@@ -85,6 +87,8 @@ class Block(nn.Module):
         
         # y_attn and y_lin_attn are (B, L, E*d_model)
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache)
+        return y_attn.view(y_attn.size(0), y_attn.size(1), -1)
+        # return self.out_proj(y_attn.view(y_attn.size(0), y_attn.size(1), -1))
         y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache)
         x = x + self.out_proj((y_attn + y_lin_attn) / 2)
         x = x + self.mlp(self.layer_norm_scaling_2 * self.postmixer_norm(x))
@@ -147,6 +151,9 @@ class Dragon(nn.Module):
             mids = {starts[i] + group_sizes[i] // 2 for i in range(G)}
             swas = [i not in mids for i in range(n)]
             blocks: List[Block] = []
+            blocks.append(Block(config, swa=False, layer_depth=1, kv_source=None))
+            """
+            pass
             for i in range(n):
                 layer_depth = i + 1
                 is_local = swas[i]
@@ -161,6 +168,7 @@ class Dragon(nn.Module):
                     if prev.kv_source is None:
                         kv_source = prev
                 blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+            """
         else:
             raise NotImplementedError
             
@@ -169,7 +177,7 @@ class Dragon(nn.Module):
             h = nn.ModuleList(blocks),
         ))
         self.final_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
-        self.lm_head = nn.Linear(config.d_model, config.vocab_size,  dtype=torch.bfloat16, bias=False)
+        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
         self.apply(self._init_weights)
 
