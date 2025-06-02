@@ -5,6 +5,7 @@ import tyro
 import pickle
 import json
 import tiktoken
+from transformers import AutoTokenizer
 from pathlib import Path
 from arch.utils import get_model
 import torch
@@ -18,7 +19,7 @@ USED FOR EVALUATING ALREADY, OLD, TRAINED MODELS
 WILL BE DELETED, AS THIS CODE IS ALSO PRESENT AFTER THE TRAINING LOOP IN THE MAIN SCRIPT
 """
 
-def eval_benchmarks(log_dir, model, tokenizer_path, limit=None, tasks=None, prompt_len=[4096]):
+def eval_benchmarks(log_dir, model, tokenizer_name, limit=None, tasks=None, prompt_len=[4096]):
     # prompt len only used for RULER tasks (NIAH...)
 
     if isinstance(log_dir, str):
@@ -28,18 +29,19 @@ def eval_benchmarks(log_dir, model, tokenizer_path, limit=None, tasks=None, prom
         tasks = model.config.eval_benchmarks_tasks
 
     # load tokenizer
-    with open(tokenizer_path, 'rb') as f:
-        enc_pickled = pickle.load(f)
-    enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
+    #with open(tokenizer_path, 'rb') as f:
+    #    enc_pickled = pickle.load(f)
+    #enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
     
     # wrap model in a LM object
     lm = NanoLM(
         model=model,
-        enc=enc,
+        enc=tokenizer,
     )
 
     # evaluate
-    results = lm_eval.simple_evaluate(lm, tasks=tasks, model_args={"tokenizer": "gpt2"}, metadata={"max_seq_lengths": prompt_len}, limit=limit)
+    results = lm_eval.simple_evaluate(lm, tasks=tasks, model_args={"tokenizer": tokenizer_name}, metadata={"max_seq_lengths": prompt_len}, limit=limit)
 
     # export all the results to a json file (to see the completions)
     result_file_path = log_dir / f"results_{'_'.join(tasks)}.json"
@@ -94,6 +96,6 @@ if __name__ == "__main__":
     new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
     model.load_state_dict(new_state_dict)
 
-    _ = eval_benchmarks(args.run_dir, model, 'data/enc.pkl', tasks=args.tasks, limit=None, prompt_len=args.prompt_len)
+    _ = eval_benchmarks(args.run_dir, model, config.eval_tokenizer_name, tasks=args.tasks, limit=None, prompt_len=args.prompt_len)
 
     print(f"Done evaluating {args.run_dir} on {args.tasks}.")

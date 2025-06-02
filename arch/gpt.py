@@ -9,7 +9,7 @@ from cut_cross_entropy import linear_cross_entropy
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention, MixerNativeSparseAttention
+from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention
 
 class Block(nn.Module):
     def __init__(self, config : NanoConfig, layer_depth: int = 1, kv_source=None):
@@ -23,8 +23,6 @@ class Block(nn.Module):
                 self.attn = MixerAttention(config, swa=False, kv_share=(kv_source is not None))
             case "diff":
                 self.attn = MixerDiffAttention(config, swa=False, kv_share=(kv_source is not None), layer_depth=layer_depth)
-            case "nsa":
-                self.attn = MixerNativeSparseAttention(config, swa=False)
             case _:
                 raise ValueError(f"Unknown attention type {config.attn_type}")
 

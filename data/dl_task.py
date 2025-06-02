@@ -22,13 +22,16 @@ class GPT_LM(LM):
     
 # tasks we care about: hellaswag, swde, squadv2, squad_completion, fda, nq_open, drop
 # + : mmlu, triviaqa, arc, piqa, winogrande
+
+# hendrycks_math, gsm8k
     
 lm = GPT_LM()
+_ = lm_eval.simple_evaluate(lm, tasks=["mmlu"])
 #_ = lm_eval.simple_evaluate(lm, tasks=["niah_single_1"])
 #_ = lm_eval.simple_evaluate(lm, tasks=["niah_single_2"])
 #_ = lm_eval.simple_evaluate(lm, tasks=["niah_single_3"])
 #_ = lm_eval.simple_evaluate(lm, tasks=["ruler_vt"])
-_ = lm_eval.simple_evaluate(lm, tasks=["ruler_qa_squad"])
+#_ = lm_eval.simple_evaluate(lm, tasks=["ruler_qa_squad"])
 #_ = lm_eval.simple_evaluate(lm, tasks=["swde"])
 #_ = lm_eval.simple_evaluate(lm, tasks=["fda"])
 #_ = lm_eval.simple_evaluate(lm, tasks=["hellaswag"])

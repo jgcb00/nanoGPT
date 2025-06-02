@@ -489,7 +489,7 @@ class MixerDiffAttention(nn.Module):
         lambda_full = (lambda_1 - lambda_2 + self.lambda_init).view(1, 1, -1, 1).type_as(y1)
         y = (y1 - lambda_full * y2).contiguous()
 
-        return y.float(), 0
+        return y.float(), cache
 
         if self.use_gate:
             # gate

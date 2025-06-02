@@ -100,9 +100,9 @@ class NanoConfig:
     vocab_size_real : int = 50257
 
     # eval - benchmarks (at the end of training)
+    eval_tokenizer_name: str = 'gpt2' # should point to a HF tokenizer. 'alexandretl/dragon-tokenizer'
     eval_benchmarks: bool = True
     eval_benchmarks_tasks: str = 'hellaswag,swde,fda,openbookqa,arc_easy,arc_challenge,piqa,winogrande,lambada,squadv2'
-    eval_tokenizer_path: str = 'data/enc.pkl'
 
     # eval - long-context PG19
     evalpg19 : bool = True

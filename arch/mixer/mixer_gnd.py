@@ -16,8 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from fla.modules import FusedRMSNormSwishGate, RMSNorm, ShortConvolution
-from fla.ops.gated_delta_rule import (chunk_gated_delta_rule,
-                                      fused_recurrent_gated_delta_rule)
+from fla.ops.gated_delta_rule import chunk_gated_delta_rule, fused_recurrent_gated_delta_rule
 
 from config import NanoConfig
 from arch.utils import HeadWiseRMSNorm
@@ -173,6 +172,11 @@ class MixerGatedDeltaNet(nn.Module):
         Returns: same shape as hidden_states
         """
 
+        _, q_len, _ = hidden_states.shape
+        mode = 'fused_recurrent' if q_len <= 64 else 'chunk'
+        if self.training:
+            assert mode == 'chunk', "Only chunk mode is supported in training."
+
         qkvba = self.in_proj(hidden_states) # (b, l, D)
         
         # split proj into q, k, v, b, a
@@ -207,18 +211,34 @@ class MixerGatedDeltaNet(nn.Module):
         beta = b_proj.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a_proj.float() + self.dt_bias)
 
-        o, h_cache = chunk_gated_delta_rule(
-                        q=q.bfloat16(),
-                        k=k.bfloat16(),
-                        v=v.bfloat16(),
-                        g=g,
-                        beta=beta,
-                        initial_state=h_cache,
-                        output_final_state=(cache is not None),
-                        cu_seqlens=None, # for varlen training
-                        head_first=False,
-                        use_qk_l2norm_in_kernel=True
+        if mode == 'chunk':
+            o, h_cache = chunk_gated_delta_rule(
+                q=q.bfloat16(),
+                k=k.bfloat16(),
+                v=v.bfloat16(),
+                g=g,
+                beta=beta,
+                initial_state=h_cache,
+                output_final_state=(cache is not None),
+                cu_seqlens=None, # for varlen training
+                head_first=False,
+                use_qk_l2norm_in_kernel=True
             ) # (b t h d) where d is head_v_dim
+        elif mode == 'fused_recurrent':
+            o, h_cache = fused_recurrent_gated_delta_rule(
+                q=q.bfloat16(),
+                k=k.bfloat16(),
+                v=v.bfloat16(),
+                g=g,
+                beta=beta,
+                initial_state=h_cache,
+                output_final_state=(cache is not None),
+                cu_seqlens=None,
+                head_first=False,
+                use_qk_l2norm_in_kernel=True
+            ) # (b t h d) where d is head_v_dim
+        else:
+            raise NotImplementedError(f"Not supported mode `{mode}`.")
         
         if self.use_gate:
             # gate

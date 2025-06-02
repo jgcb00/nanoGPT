@@ -44,8 +44,8 @@ class NanoLM(LM):
         for request in tqdm.tqdm(requests):
             input_str, target_str = request.args
 
-            input_ids  = self.enc.encode(input_str).ids
-            target_ids = self.enc.encode(target_str).ids
+            input_ids  = self.enc.encode(input_str)
+            target_ids = self.enc.encode(target_str)
             len_input = len(input_ids)
             len_target = len(target_ids)
 
@@ -78,13 +78,13 @@ class NanoLM(LM):
             for request in batch:
                 input_str, target_str = request.args
 
-                input_enc = self.enc.encode(input_str) # list of ints
-                target_enc = self.enc.encode(target_str)
-                len_target = len(target_enc)
+                input_ids = self.enc.encode(input_str) # list of ints
+                target_ids = self.enc.encode(target_str)
+                len_target = len(target_ids)
 
-                prompts.append(torch.tensor(input_enc))
+                prompts.append(torch.tensor(input_ids))
                 n_tokens.append(len_target)
-                target_enc_list.append(target_enc)
+                target_enc_list.append(target_ids)
 
             with ctx:
                 generated_batch = self.generate(prompts=prompts, n_tokens=n_tokens, sample=False) # list of B x (L) tensors
@@ -148,11 +148,11 @@ class NanoLM(LM):
                 else:
                     top_k = None
 
-                input_enc = self.enc.encode(input_str)
+                input_ids = self.enc.encode(input_str)
 
                 # with b>1, only the first is considered
                 # that shouldnt pose problem more most benchmarks
-                prompts.append(torch.tensor(input_enc))
+                prompts.append(torch.tensor(input_ids))
                 n_tokens_list.append(max_gen_toks)
                 samples.append(do_sample)
                 temperatures.append(temperature)
