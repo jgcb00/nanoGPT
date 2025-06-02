@@ -26,7 +26,25 @@ class GPT_LM(LM):
 # hendrycks_math, gsm8k
     
 lm = GPT_LM()
-_ = lm_eval.simple_evaluate(lm, tasks=["mmlu"])
+#_ = lm_eval.simple_evaluate(lm, tasks=["triviaqa"])
+#print("triviaqa done")
+#_ = lm_eval.simple_evaluate(lm, tasks=["truthfulqa_mc1"])
+#_ = lm_eval.simple_evaluate(lm, tasks=["truthfulqa_mc2"])
+#print("truthfulqa done")
+#_ = lm_eval.simple_evaluate(lm, tasks=["belebele"])
+#print("belebele done")
+#import os
+#os.environ["HF_ALLOW_CODE_EVAL"] = "1"
+#_ = lm_eval.simple_evaluate(lm, tasks=["humaneval"], confirm_run_unsafe_code=True)
+#print("humaneval done")
+#_ = lm_eval.simple_evaluate(lm, tasks=["xnli"])
+#print("xnli done")
+#_ = lm_eval.simple_evaluate(lm, tasks=["arc_challenge_mt"])
+#print("arc_mt done")
+_ = lm_eval.simple_evaluate(lm, tasks=["mmlu_pro"])
+print("mmlupro done")
+
+#_ = lm_eval.simple_evaluate(lm, tasks=["mmlu"])
 #_ = lm_eval.simple_evaluate(lm, tasks=["niah_single_1"])
 #_ = lm_eval.simple_evaluate(lm, tasks=["niah_single_2"])
 #_ = lm_eval.simple_evaluate(lm, tasks=["niah_single_3"])
