@@ -248,8 +248,8 @@ class MixerGatedDeltaNet(nn.Module):
                 g = self.g_proj(hidden_states).view(o.size(0), o.size(1), o.size(2), 1) # (B, L, H, 1)
             else:
                 raise ValueError(f"Unknown gate type: {self.config.gate_type_gdn}")
-            
             o = o * self.act_func_gate(g)
+
         return o, (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
 
         """

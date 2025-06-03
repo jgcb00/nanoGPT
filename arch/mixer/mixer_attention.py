@@ -257,8 +257,6 @@ class MixerAttention(nn.Module):
         else:
             raise ValueError
 
-        return y.float(), cache
-
         if self.use_gate:
             # gate
             if self.config.gate_type_attn == "elementwise":
@@ -267,19 +265,8 @@ class MixerAttention(nn.Module):
                 g = self.g_proj(hidden_states).view(B, T, y.size(2), 1) # (B, L, H, 1)
             else:
                 raise ValueError(f"Unknown gate type: {self.config.gate_type_attn}")
+            y = y * self.act_func_gate(g)
 
-        if self.config.norm_before_gate_attn:
-            if self.config.groupnorm:
-                y = self.group_norm(y)
-            if self.use_gate:
-                y = y * self.act_func_gate(g)
-        else:
-            if self.use_gate:
-                y = y * self.act_func_gate(g)
-            if self.config.groupnorm:
-                y = self.group_norm(y)
-        
-        y = y.contiguous().view(B, T, self.d_model*self.expand_factor)
         return y, cache
     
     def get_kv(self):
@@ -489,8 +476,6 @@ class MixerDiffAttention(nn.Module):
         lambda_full = (lambda_1 - lambda_2 + self.lambda_init).view(1, 1, -1, 1).type_as(y1)
         y = (y1 - lambda_full * y2).contiguous()
 
-        return y.float(), cache
-
         if self.use_gate:
             # gate
             if self.config.gate_type_attn == "elementwise":
@@ -499,22 +484,8 @@ class MixerDiffAttention(nn.Module):
                 g = self.g_proj(hidden_states).view(B, T, y.size(2), 1) # (B, L, H, 1)
             else:
                 raise ValueError(f"Unknown gate type: {self.config.gate_type_attn}")
+            y = y * self.act_func_gate(g)
 
-        if self.config.norm_before_gate_attn:
-            if self.config.groupnorm:
-                y = self.group_norm(y)
-            if self.use_gate:
-                y = y * self.act_func_gate(g)
-        else:
-            if self.use_gate:
-                y = y * self.act_func_gate(g)
-            if self.config.groupnorm:
-                y = self.group_norm(y)
-
-        #y = y * (1 - self.lambda_init)
-        # We found that group norm doesn't improve on long scale the results
-        # y = F.rms_norm(y, (2*self.head_dim,)) * (1 - self.lambda_init) 
-        y = y.view(B, T, self.d_model*self.expand_factor)
         return y, cache
         
     def get_kv(self):

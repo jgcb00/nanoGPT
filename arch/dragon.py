@@ -4,12 +4,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from fla.modules import FusedLinearCrossEntropyLoss, FusedCrossEntropyLoss
-from cut_cross_entropy import linear_cross_entropy
+from fla.modules import FusedLinearCrossEntropyLoss
 
 from config import NanoConfig
 from arch.mlp import MLP
-from nanoGPT.arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention
+from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 from arch.utils import HeadWiseRMSNorm
@@ -51,7 +50,6 @@ class Block(nn.Module):
 
         self.kv_source = kv_source
         self.out_proj = nn.Linear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
-        #self.out_proj.weight.data.zero_() # zero init suggested by @Grad62304977
         
         if isinstance(self.attn, MixerDiffAttention):
             self.attn_group_norm = HeadWiseRMSNorm(n_heads=self.attn.n_heads//2, d_head=2*self.attn.head_dim, eps=config.eps_rmsnorm)
@@ -64,7 +62,6 @@ class Block(nn.Module):
         self.mlp = MLP(config)
         
         # register here to not break torch_dynamo
-        
         if config.layer_norm_scaling and config.layer_norm_scaling == "simple":
             self.register_buffer("layer_norm_scaling_1", torch.tensor(1 / math.sqrt(layer_depth+1)))
             self.register_buffer("layer_norm_scaling_2", torch.tensor(1 / math.sqrt(layer_depth+1)))
@@ -87,12 +84,16 @@ class Block(nn.Module):
 
         hidden = self.layer_norm_scaling_1 * self.input_norm(x) # (B, L, d_model)
         
-        # y_attn and y_lin_attn are (B, L, E*d_model)
-        y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache)
-        y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache)
+        # MIXER.
+        y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache) # (B, L, E*D)
+        y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache) # (B, L, E*D)
+
         y_attn = self.attn_group_norm(y_attn).view(y_attn.size(0), y_attn.size(1), -1)
         y_lin_attn = self.lin_attn_group_norm(y_lin_attn).view(y_lin_attn.size(0), y_lin_attn.size(1), -1)
+
         x = x + self.out_proj((y_attn + y_lin_attn) / 2)
+
+        # MLP.
         x = x + self.mlp(self.layer_norm_scaling_2 * self.postmixer_norm(x))
         return x if cache is None else (x, (attn_cache, lin_attn_cache))
 
@@ -104,8 +105,6 @@ class Dragon(nn.Module):
     def __init__(self, config: NanoConfig):
         super().__init__()
         self.config = config
-
-        # TODO: fuse the two loops?
 
         if self.config.global_attn_repart == "hymba":
             swas : List[bool] = [] # whether to use swa for each layer
@@ -154,13 +153,12 @@ class Dragon(nn.Module):
 
             for is_local in swas:
                 if is_local:
-                    # two local‐attention layers per “True”
                     # first local
                     first = Block(config, swa=True, layer_depth=layer_depth, kv_source=None)
                     blocks.append(first)
                     layer_depth += 1
 
-                    # second local, maybe sharing kv with the first
+                    # second local, sharing kv with the first
                     kv_src = first if config.use_kv_sharing else None
                     second = Block(config, swa=True, layer_depth=layer_depth, kv_source=kv_src)
                     blocks.append(second)
@@ -235,20 +233,6 @@ class Dragon(nn.Module):
         if targets is not None: # if we are given some desired targets also calculate the loss
             if self.config.use_patch_level_training:
                 if self.config.fused_loss_computation:
-
-                    # regular, modified
-                    """
-                    logits = self.lm_head(x)
-                    logits = logits.float() # use tf32/fp32 for logits
-
-                    targets = targets.reshape(-1, self.config.patch_size)
-
-                    loss = 0
-                    for i in range(self.config.patch_size):
-                        loss += F.cross_entropy(logits.view(-1, logits.size(-1)), targets[:, i], ignore_index=-1)
-                    loss /= self.config.patch_size"
-                    """
-
                     # FusedLinearCrossEntropyLoss
                     criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
                     targets = targets.reshape(-1, self.config.patch_size)
@@ -257,19 +241,6 @@ class Dragon(nn.Module):
                     for i in range(self.config.patch_size):
                         loss += criterion(x, targets[:, i], self.lm_head.weight)
                     loss /= self.config.patch_size
-
-                    # FusedCrossEntropyLoss
-                    """
-                    criterion = FusedCrossEntropyLoss(ignore_index=-1)
-                    logits = self.lm_head(x)
-                    logits = logits.float() # use tf32/fp32 for logits
-                    targets = targets.reshape(-1, self.config.patch_size)
-                    loss = 0
-                    for i in range(self.config.patch_size):
-                        loss += criterion(logits.view(-1, logits.size(-1)), targets[:, i])
-                    loss /= self.config.patch_size"
-                    """
-
                 else:
                     logits = self.lm_head(x)
                     logits = logits.float() # use tf32/fp32 for logits
@@ -282,39 +253,7 @@ class Dragon(nn.Module):
                         loss += F.nll_loss(log_probs, targets[:, i], ignore_index=-1)
                     loss /= self.config.patch_size
             else:
-                if self.config.fused_loss_computation and scores is not None:
-
-                    # x : (B, L, d_model)
-                    # targets : (B, L)
-                    # scores : (B, L)
-
-                    if self.config.scores_loss_coupling == "sqrt":
-                        x = x.to(torch.bfloat16)
-                        scores = scores.to(torch.bfloat16)
-                        scores = scores - 1.0
-                        scores = torch.where(scores < 0.3, scores.new_tensor(0.3), scores)
-                        scores = torch.sqrt(scores)
-                        scores[:, :32] = 1
-                        #print(scores[:, 2500:2520])
-                        loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)
-                        loss = loss * scores
-                        #print(loss)
-                        loss = torch.mean(loss.view(1, -1))
-                        #print(loss)
-                    elif self.config.scores_loss_coupling == "soft-rho1":
-                        x = x.to(torch.bfloat16)
-                        scores = scores.to(torch.bfloat16)
-
-                        unscaled_loss = linear_cross_entropy(x, self.lm_head.weight, targets, reduction='none', ignore_index=-1)
-
-                        alpha = 0.5
-                        smooth_weights = torch.sigmoid(alpha * (scores-scores.mean()))
-
-                        loss = (unscaled_loss * smooth_weights).sum() / smooth_weights.sum()
-                    else:
-                        raise ValueError(f"Unknown scores_loss_coupling {self.config.scores_loss_coupling}")
-                    
-                elif self.config.fused_loss_computation:
+                if self.config.fused_loss_computation:
                     criterion = FusedLinearCrossEntropyLoss(ignore_index=-1)
                     loss = criterion(x, targets, self.lm_head.weight)
                 else:
@@ -322,7 +261,6 @@ class Dragon(nn.Module):
                     logits = logits.float() # use tf32/fp32 for logits
                     loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
             return loss
-
         elif caches is None: # inference without caching (not recommended)
             # inference-time mini-optimization: only forward the lm_head on the very last position
             logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
