@@ -251,22 +251,6 @@ class MixerGatedDeltaNet(nn.Module):
             o = o * self.act_func_gate(g)
 
         return o, (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
-
-        """
-        if self.config.norm_before_gate:
-            if self.config.groupnorm:
-                o = self.group_norm(o)
-            if self.use_gate:
-                o = o * self.act_func_gate(g)
-        else:
-            if self.use_gate:
-                o = o * self.act_func_gate(g)
-            if self.config.groupnorm:
-                o = self.group_norm(o)
-
-        o = rearrange(o, 'b t h d -> b t h d').contiguous()
-        return o, (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
-        """
     
     def get_empty_cache(self):
         return (None, None, None, None) # (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
