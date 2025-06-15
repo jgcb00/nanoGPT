@@ -20,17 +20,10 @@ try:
 except ImportError:
     pass
 
-try:
-    from native_sparse_attention.ops import compressed_attention, topk_sparse_attention, linear_compress, avgpool_compress, weightedpool_compress
-    from native_sparse_attention.module.rope import RopeConfig, RotaryEmbedding
-except ImportError:
-    pass
-
 from transformer_engine.pytorch.attention import _SplitAlongDim
 SplitAlongDim = _SplitAlongDim.apply
 
 from config import NanoConfig
-from arch.utils import HeadWiseRMSNorm
 import math
 
 #todo: rename head_dim in diffattn to d_head just like in mixer_attention
@@ -90,16 +83,6 @@ class MixerAttention(nn.Module):
             self.scalable_softmax = False
         self.use_gate = config.use_gate_attn
         assert self.d_model % self.n_heads == 0
-
-        if self.config.groupnorm:
-            if self.config.model == "dragon":
-                if self.config.groupnorm_unique:
-                    if not self.config.groupnorm_unique_independent:
-                        self.group_norm = nn.RMSNorm((self.n_heads, self.d_head), elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
-                    else:
-                        self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads, d_head=self.d_head, eps=config.eps_rmsnorm)
-                else:
-                    self.group_norm = nn.RMSNorm(self.d_head, elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
 
         proj_dim = self.d_head * (self.n_heads + 2 * (0 if kv_share else self.n_kv_heads))
         self.linear_qkv = nn.Linear(self.d_model, proj_dim, bias=False)
@@ -309,28 +292,17 @@ class MixerDiffAttention(nn.Module):
         self.register_buffer("lambda_init", torch.tensor(0.8 - 0.6 * math.exp(-0.3 * layer_depth)))
         
         head_dim = self.head_dim // 2
-        self.lambda_q1 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
-        self.lambda_k1 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
-        self.lambda_q2 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
-        self.lambda_k2 = torch.nn.Parameter(torch.zeros(self.n_heads//2, head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        lambdas_shape = (self.n_heads//2, head_dim) if config.full_lambdas else (head_dim,)
+        self.lambda_q1 = torch.nn.Parameter(torch.zeros(lambdas_shape, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k1 = torch.nn.Parameter(torch.zeros(lambdas_shape, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_q2 = torch.nn.Parameter(torch.zeros(lambdas_shape, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k2 = torch.nn.Parameter(torch.zeros(lambdas_shape, dtype=torch.float32).normal_(mean=0,std=0.1))
 
         if self.qk_norm:
             self.q_norm = nn.RMSNorm(self.head_dim, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
             if not kv_share:
                 self.k_norm = nn.RMSNorm(self.head_dim, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
 
-        if self.config.groupnorm:
-            if self.config.model == "dragon":
-                if self.config.groupnorm_unique:
-                    if not self.config.groupnorm_unique_independent:
-                        self.group_norm = nn.RMSNorm((self.n_heads//2, 2*self.head_dim), elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
-                    else:
-                        self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads//2, d_head=2*self.head_dim, eps=config.eps_rmsnorm)
-                else:
-                    self.group_norm = nn.RMSNorm(2*self.head_dim, elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
-            else:
-                self.group_norm = nn.RMSNorm(2*self.head_dim, elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
-        
         assert self.d_model % self.n_heads == 0
         self.linear_qkv = nn.Linear(self.d_model, self.n_heads*self.head_dim + 2*self.n_kv_heads*self.head_dim, bias=False)
         if self.rope:

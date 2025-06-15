@@ -318,7 +318,7 @@ if nconfig.eval_benchmarks and master_process:
     from eval import eval_benchmarks
 
     print0(f"Evaluating on tasks: {nconfig.eval_benchmarks_tasks}.")
-    results = eval_benchmarks(logdir, raw_model, nconfig.eval_tokenizer_path)
+    results = eval_benchmarks(logdir, raw_model, nconfig, nconfig.eval_tokenizer_name)
     print0("Done evaluating benchmarks.")
 
     # log to wandb

@@ -2,6 +2,8 @@ from pathlib import Path
 from dataclasses import dataclass
 import pickle
 import tyro
+import json
+from dataclasses import fields
 
 import torch
 
@@ -18,12 +20,19 @@ class Args:
 args = tyro.cli(Args)
 
 # read config
-with open(args.run_dir / 'config.pkl', 'rb') as f:
-    config: NanoConfig = pickle.load(f)
-config.rmsnorm = False
-config.disable_scalable_softmax_for_local = True # False for loading old runs, True for newer ones
-config.use_patch_level_training = False
-config.fused_loss_computation = False
+#with open(args.run_dir / 'config.pkl', 'rb') as f:
+#    config: NanoConfig = pickle.load(f)
+#config.rmsnorm = False
+#config.disable_scalable_softmax_for_local = True # False for loading old runs, True for newer ones
+#config.use_patch_level_training = False
+#config.fused_loss_computation = False
+with open(Path(args.run_dir) / "config.json", "r") as f:
+        data = json.load(f)
+valid_keys = {f.name for f in fields(NanoConfig)}
+filtered = {k: v for k, v in data.items() if k in valid_keys}
+if "eval_benchmarks_tasks" in filtered and isinstance(filtered["eval_benchmarks_tasks"], list):
+    filtered["eval_benchmarks_tasks"] = ",".join(filtered["eval_benchmarks_tasks"])
+config = NanoConfig(**filtered)
 
 # define and load model, tokenizer
 model = get_model(config)

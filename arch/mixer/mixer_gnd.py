@@ -19,7 +19,6 @@ from fla.modules import FusedRMSNormSwishGate, RMSNorm, ShortConvolution
 from fla.ops.gated_delta_rule import chunk_gated_delta_rule, fused_recurrent_gated_delta_rule
 
 from config import NanoConfig
-from arch.utils import HeadWiseRMSNorm
 
 class MixerGatedDeltaNet(nn.Module):
     def __init__(
@@ -148,15 +147,6 @@ class MixerGatedDeltaNet(nn.Module):
                 self.act_func_gate = F.sigmoid
             else:
                 raise ValueError(f"Unknown gate activation: {self.config.gate_act_gdn}")
-
-        if self.config.groupnorm:
-            if self.config.groupnorm_unique:
-                if not self.config.groupnorm_unique_independent:
-                    self.group_norm = nn.RMSNorm((self.n_heads, self.head_v_dim), elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
-                else:
-                    self.group_norm = HeadWiseRMSNorm(n_heads=self.n_heads, d_head=self.head_v_dim, eps=config.eps_rmsnorm)
-            else:
-                self.group_norm = nn.RMSNorm(self.head_v_dim, elementwise_affine=config.groupnorm_weights, eps=config.eps_rmsnorm)
 
         self.apply(self._initialize_weights)
     

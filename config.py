@@ -36,6 +36,8 @@ class NanoConfig:
     norm_before_gate_attn: bool = False
     gate_act_gdn: str = "silu" # silu, srelu, sigmoid
     gate_type_gdn: str = "elementwise" # elementwise, headwise
+    input_norm: bool = False
+    full_lambdas: bool = False # (n_heads, d_head) if full_lambdas=True, (n_heads,) if False (MG compatibility)
     fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
 
     # Attention related

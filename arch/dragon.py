@@ -62,6 +62,7 @@ class Block(nn.Module):
         self.mlp = MLP(config)
         
         # register here to not break torch_dynamo
+        """
         if config.layer_norm_scaling and config.layer_norm_scaling == "simple":
             self.register_buffer("layer_norm_scaling_1", torch.tensor(1 / math.sqrt(layer_depth+1)))
             self.register_buffer("layer_norm_scaling_2", torch.tensor(1 / math.sqrt(layer_depth+1)))
@@ -71,6 +72,9 @@ class Block(nn.Module):
         else:
             self.register_buffer("layer_norm_scaling_1", torch.tensor(1.0))
             self.register_buffer("layer_norm_scaling_2", torch.tensor(1.0))
+        """
+
+        self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth+1)) if config.layer_norm_scaling else 1.)
 
     def forward(self, x, cache=None):
         external_kv = None
@@ -82,7 +86,7 @@ class Block(nn.Module):
         else:
             attn_cache, lin_attn_cache = None, None
 
-        hidden = self.layer_norm_scaling_1 * self.input_norm(x) # (B, L, d_model)
+        hidden = self.layer_norm_scaling * self.input_norm(x) # (B, L, d_model)
         
         # MIXER.
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache) # (B, L, E*D)
@@ -94,7 +98,7 @@ class Block(nn.Module):
         x = x + self.out_proj((y_attn + y_lin_attn) / 2)
 
         # MLP.
-        x = x + self.mlp(self.layer_norm_scaling_2 * self.postmixer_norm(x))
+        x = x + self.mlp(self.layer_norm_scaling * self.postmixer_norm(x))
         return x if cache is None else (x, (attn_cache, lin_attn_cache))
 
     def get_empty_cache(self):
@@ -145,6 +149,26 @@ class Dragon(nn.Module):
                 blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
         elif self.config.global_attn_repart == "middle":
             n = config.n_layers
+            base, rem = divmod(n, 3)
+            group_sizes = [base + (1 if i < rem else 0) for i in range(3)]
+            starts = [sum(group_sizes[:i]) for i in range(3)]
+            mids = {starts[i] + group_sizes[i] // 2 for i in range(3)}
+            swas = [i not in mids for i in range(n)]
+            blocks: List[Block] = []
+            for i in range(n):
+                layer_depth = i + 1
+                is_local = swas[i]
+                kv_source = None
+                if not config.use_kv_sharing:
+                    blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+                    continue
+                if is_local and i > 0 and swas[i-1]: # share kv cache between consecutive local layers
+                    prev = blocks[i-1]
+                    if prev.kv_source is None:
+                        kv_source = prev
+                blocks.append(Block(config, swa=is_local, layer_depth=layer_depth, kv_source=kv_source))
+        elif self.config.global_attn_repart == "megatron":
+            n = config.n_layers
             G = config.n_global_layers
             swas = self.allocate_swas(n, G)
 
@@ -175,6 +199,8 @@ class Dragon(nn.Module):
             wte = nn.Embedding(config.vocab_size, config.d_model),
             h = nn.ModuleList(blocks),
         ))
+        if self.config.input_norm:
+            self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.final_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
@@ -205,6 +231,9 @@ class Dragon(nn.Module):
 
         # forward the Dragon model itself
         x = self.transformer.wte(idx) # token embeddings of shape (B, L, d_model)
+
+        if self.config.input_norm:
+            x = self.input_norm(x)
 
         if self.config.use_patch_level_training:
             x = x.view(B, L//self.config.patch_size, self.config.patch_size, -1).mean(2) # (B, num_patches, D)
