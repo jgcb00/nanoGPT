@@ -74,6 +74,10 @@ def get_optimizers(model, nconfig: NanoConfig, raw_model):
             optimizer1 = SWAN(swan_params, lr=nconfig.learning_rate, weight_decay=nconfig.weight_decay, do_compile=True)
             optimizer2 = AdamW(adamw_params, lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
             optimizers = [optimizer1, optimizer2]
+        case 'splus':
+            from arch.optim.splus import SPlus
+            optimizer = SPlus(model.parameters(), lr=nconfig.learning_rate, weight_decay=nconfig.weight_decay, d_model=nconfig.d_model, max_dim=nconfig.vocab_size)
+            optimizers = [optimizer]
         case _:
             raise ValueError(f"Optimizer {nconfig.optim} not supported")
     

@@ -29,6 +29,8 @@ from arch.schedulers import get_schedulers
 # next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
 # learning rate decay scheduler (linear warmup and warmdown)
 
+torch.backends.cuda.preferred_linalg_library("magma")
+
 nconfig = tyro.cli(NanoConfig)
 assert nconfig.run_name != "", "Please provide a run name for this training run."
 
@@ -146,6 +148,8 @@ torch.cuda.synchronize()
 t0 = time.time()
 reset_step = 10 # step at which we reset the timer
 # begin training
+if nconfig.optim == 'splus':
+    optimizers[0].train()
 train_loader.reset()
 wsize = 0
 
@@ -173,6 +177,9 @@ for step in range(nconfig.num_iterations + 1):
 
     # --------------- VALIDATION SECTION -----------------
     if (last_step or (nconfig.val_loss_every > 0 and step % nconfig.val_loss_every == 0)):
+        if nconfig.optim == 'splus':
+            optimizers[0].eval()
+
         # stop the clock
         torch.cuda.synchronize()
         training_time_ms += 1000 * (time.time() - t0)
@@ -216,6 +223,8 @@ for step in range(nconfig.num_iterations + 1):
         break
 
     # --------------- TRAINING SECTION -----------------
+    if nconfig.optim == 'splus':
+        optimizers[0].train()
     model.train()
     for i in range(1, train_accumulation_steps+1):
         # forward pass
@@ -240,6 +249,8 @@ for step in range(nconfig.num_iterations + 1):
         sched.step()
     # null the gradients
     model.zero_grad(set_to_none=True)
+    if nconfig.optim == 'splus':
+        optimizers[0].zero_grad()
     # --------------- TRAINING SECTION END -------------------
     # everything that follows now is just diagnostics, prints, logging, etc.
 

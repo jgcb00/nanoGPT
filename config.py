@@ -66,7 +66,7 @@ class NanoConfig:
     expand_v : int = 2
 
     # optim
-    optim : str = "muon" # adamw, spam, stable-spam or muon
+    optim : str = "muon" # adamw, spam, stable-spam, muon, muon_moonlight, splus
     batch_size : int = 8*64 # batch size, in sequences, across all devices
     device_batch_size : int = 64 # batch size, in sequences, per device
     num_iterations : int = 1000 # number of iterations to run
@@ -120,7 +120,7 @@ class NanoConfig:
         # check for valid linear attention type
         assert self.lin_attn_type in ["mamba2", "gdn"]
         # check for valid optimizer type
-        assert self.optim in ["adamw", "spam", "muon", "stable-spam", "muon_moonlight", "swan"]
+        assert self.optim in ["adamw", "spam", "muon", "stable-spam", "muon_moonlight", "swan", "splus"]
         # check for valid n_heads
         assert self.d_model % self.n_heads == 0, "d_model must be divisible by n_heads"
         self.d_head = self.d_model // self.n_heads
