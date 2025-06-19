@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Union
+from typing import List, Union, Optional
 
 # todo: on pourra utiliser un typing union pour forcer certaines valeurs c'est plus propre
 # gpt: n_layers=12, expand_factor=1; dragon: n_layers=7, expand_factor=2
@@ -29,7 +29,7 @@ class NanoConfig:
     groupnorm_weights: bool = True
     groupnorm_unique: bool = False # if False, groupnorm weights are shared among heads of same nature. if True, weights for each head.
     groupnorm_unique_independent: bool = False # True=normalization is done indenpendently for each head, False=normalization is done jointly for all heads
-    eps_rmsnorm: float = None
+    eps_rmsnorm: Optional[float] = None
     mlp_expand: int = 4 # expand factor for MLP
     gate_act_attn: str = "silu" # silu, srelu, sigmoid
     gate_type_attn: str = "elementwise" # elementwise, headwise
@@ -116,7 +116,7 @@ class NanoConfig:
         # check for valid model
         assert self.model in ["gpt", "dragon", "gated-delta-net", "mamba2"]
         # check for valid attention type
-        assert self.attn_type in ["normal", "diff"]
+        assert self.attn_type in ["normal", "diff", "gta", "gtda"]
         # check for valid linear attention type
         assert self.lin_attn_type in ["mamba2", "gdn"]
         # check for valid optimizer type

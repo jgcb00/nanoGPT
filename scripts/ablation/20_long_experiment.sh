@@ -1,13 +1,13 @@
 #!/bin/bash
-##SBATCH --nodes=8
-##SBATCH --ntasks-per-node=1
-##SBATCH --cpus-per-task=32
-##SBATCH --gres=gpu:4
-##SBATCH --time=24:00:00
-##SBATCH --error=logs/experiment20_longrun_LR411.err
-##SBATCH --output=logs/experiment20_longrun_LR411.out
-##SBATCH --account=BOOST_LCustodi
-##SBATCH --partition=boost_usr_prod
+#SBATCH --nodes=8
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=32
+#SBATCH --gres=gpu:4
+#SBATCH --time=24:00:00
+#SBATCH --error=logs/experiment20_longrun_LR411.err
+#SBATCH --output=logs/experiment20_longrun_LR411.out
+#SBATCH --account=BOOST_LCustodi
+#SBATCH --partition=boost_usr_prod
 
 # uncomment sbatch directives, srun, gpu_per_node to 4, val loss every to 250
 
@@ -17,7 +17,7 @@ source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/a
 
 export WANDB_MODE=offline
 
-GPUS_PER_NODE=1
+GPUS_PER_NODE=4
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 MASTER_PORT=48994
 NUM_NODES=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l)
@@ -41,9 +41,8 @@ DISTRIBUTED_ARGS=(
 # +layer-norm scaling
 # +diff-attention
 
-torchrun ${DISTRIBUTED_ARGS[@]} main.py \
+srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --run_name exp20long_Dragon-L-GDN-LR4.11_splus \
-    --global_attn_repart middle \
     --no-input_norm \
     --no-full_lambdas \
     --eps_rmsnorm 1.0e-6 \
@@ -79,7 +78,7 @@ torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --vocab_size 50304 \
     --input_bin '../nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
     --input_val_bin '../nanoGPT/data/fineweb100B/fineweb_val_*.bin' \
-    --val_loss_every 10 \
+    --val_loss_every 250 \
     --val_tokens 10174464 \
     --save_every 10000 \
     --eval_benchmarks_tasks 'hellaswag,swde,fda' \

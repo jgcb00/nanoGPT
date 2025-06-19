@@ -4,12 +4,12 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
-#SBATCH --error=logs/experiment20_longrun_LR02.err
-#SBATCH --output=logs/experiment20_longrun_R02.out
+#SBATCH --error=logs/experiment21_longrun_gqa_gtda.err
+#SBATCH --output=logs/experiment21_longrun_gqa_gtda.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
 
-# uncomment sbatch directives, srun, gpu_per_node to 4
+# uncomment sbatch directives, srun, gpu_per_node to 4, val loss every to 250
 
 module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
 
@@ -17,7 +17,7 @@ source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/a
 
 export WANDB_MODE=offline
 
-GPUS_PER_NODE=1
+GPUS_PER_NODE=4
 MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 MASTER_PORT=48994
 NUM_NODES=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | wc -l)
@@ -42,8 +42,7 @@ DISTRIBUTED_ARGS=(
 # +diff-attention
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp20long_Dragon-L-GDN-LR0.2_splus \
-    --global_attn_repart middle \
+    --run_name exp21long_Dragon-L-GDN-gqa_gtda_adamw \
     --no-input_norm \
     --no-full_lambdas \
     --eps_rmsnorm 1.0e-6 \
@@ -61,16 +60,17 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --use_kv_sharing \
     --use_swa \
     --qk-norm \
-    --attn_type diff \
+    --attn_type gtda \
+    --local_attn_type normal \
     --lin_attn_type gdn \
     --global_attn_repart middle \
     --expand_factor 2 \
     --layer-norm-scaling \
     --scalable_softmax \
-    --optim splus \
+    --optim adamw \
     --batch_size 128 \
     --device_batch_size 1 \
-    --learning_rate 0.2 \
+    --learning_rate 1.605e-3 \
     --num_iterations 66342 \
     --warmup_iters 0.0045 \
     --warmdown_iters 0.15 \

@@ -24,7 +24,6 @@ class MixerGatedDeltaNet(nn.Module):
     def __init__(
         self,
         config: NanoConfig,
-        expand_factor=2,
         conv_bias=False,
         conv_init=None,
         norm_eps=1e-5
@@ -33,7 +32,7 @@ class MixerGatedDeltaNet(nn.Module):
         self.config = config
         
         self.d_model = config.d_model
-        self.expand_factor = expand_factor
+        self.expand_factor = config.expand_factor
         self.expand_v = config.expand_v
         self.use_gate = config.use_gate
 

@@ -8,50 +8,53 @@ from fla.modules import FusedLinearCrossEntropyLoss
 
 from config import NanoConfig
 from arch.mlp import MLP
-from arch.mixer.mixer_attention import MixerAttention, MixerDiffAttention
+from arch.mixer.mixer_attention import (
+    MixerAttention,
+    MixerDiffAttention,
+    MixerGroupedTiedAttention,
+    MixerGroupedTiedDifferentialAttention
+)
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 from arch.utils import HeadWiseRMSNorm
 
+ATTN_CLASSES = {
+    "normal": MixerAttention,
+    "diff":   MixerDiffAttention,
+    "gta":    MixerGroupedTiedAttention,
+    "gtda":   MixerGroupedTiedDifferentialAttention,
+}
+
+LIN_ATTN_CLASSES = {
+    "mamba2": MixerMamba2,
+    "gdn":    MixerGatedDeltaNet,
+}
+
 class Block(nn.Module):
-    def __init__(self, config : NanoConfig, swa: bool = False, layer_depth: int = 1, kv_source=None):
+    def __init__(self, config: NanoConfig, swa: bool = False, layer_depth: int = 1, kv_source=None):
         """
         swa: whether to use local attention/SWA for this block, or global
         kv_source: layer to get KV from, if any
         """
         super().__init__()
 
-        if not swa:
-            match config.attn_type:
-                case "normal":
-                    self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
-                case "diff":
-                    self.attn = MixerDiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
-                case _:
-                    raise ValueError(f"Unknown attention type {config.attn_type}")
-        else:
-            match config.local_attn_type:
-                case "normal":
-                    self.attn = MixerAttention(config, swa=swa, kv_share=(kv_source is not None))
-                case "diff":
-                    self.attn = MixerDiffAttention(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
-                case _:
-                    raise ValueError(f"Unknown attention type {config.local_attn_type}")
+        attn_type = config.local_attn_type if swa else config.attn_type
+        cls = ATTN_CLASSES.get(attn_type)
+        if cls is None:
+            raise ValueError(f"Unknown attention type {attn_type}")
+        self.attn = cls(config, swa=swa, kv_share=(kv_source is not None), layer_depth=layer_depth)
 
-        match config.lin_attn_type:
-            case "mamba2":
-                self.lin_attn = MixerMamba2(config=config)
-            case "gdn":
-                self.lin_attn = MixerGatedDeltaNet(config=config, expand_factor=self.attn.expand_factor)
-            case _:
-                raise ValueError(f"Unknown linear attention type {config.lin_attn_type}")
+        cls = LIN_ATTN_CLASSES.get(config.lin_attn_type)
+        if cls is None:
+            raise ValueError(f"Unknown linear attention type {config.lin_attn_type}")
+        self.lin_attn = cls(config)
             
-        self.expand_factor = self.attn.expand_factor
+        self.expand_factor = config.expand_factor
 
         self.kv_source = kv_source
         self.out_proj = nn.Linear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
         
-        if isinstance(self.attn, MixerDiffAttention):
+        if isinstance(self.attn, (MixerDiffAttention, MixerGroupedTiedDifferentialAttention)):
             self.attn_group_norm = HeadWiseRMSNorm(n_heads=self.attn.n_heads//2, d_head=2*self.attn.head_dim, eps=config.eps_rmsnorm)
         else:
             self.attn_group_norm = HeadWiseRMSNorm(n_heads=self.attn.n_heads, d_head=self.attn.d_head, eps=config.eps_rmsnorm)
@@ -61,19 +64,6 @@ class Block(nn.Module):
         self.postmixer_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.mlp = MLP(config)
         
-        # register here to not break torch_dynamo
-        """
-        if config.layer_norm_scaling and config.layer_norm_scaling == "simple":
-            self.register_buffer("layer_norm_scaling_1", torch.tensor(1 / math.sqrt(layer_depth+1)))
-            self.register_buffer("layer_norm_scaling_2", torch.tensor(1 / math.sqrt(layer_depth+1)))
-        elif config.layer_norm_scaling and config.layer_norm_scaling == "double":
-            self.register_buffer("layer_norm_scaling_1", torch.tensor(1 / math.sqrt(2*layer_depth-1)))
-            self.register_buffer("layer_norm_scaling_2", torch.tensor(1 / math.sqrt(2*layer_depth)))
-        else:
-            self.register_buffer("layer_norm_scaling_1", torch.tensor(1.0))
-            self.register_buffer("layer_norm_scaling_2", torch.tensor(1.0))
-        """
-
         self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth+1)) if config.layer_norm_scaling else 1.)
 
     def forward(self, x, cache=None):

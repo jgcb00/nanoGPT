@@ -4,10 +4,12 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
-#SBATCH --error=logs/experiment14_longrun_dragon3B.err
-#SBATCH --output=logs/experiment14_longrun_dragon3B.out
+#SBATCH --error=logs/experiment21_longrun_gta_gtda.err
+#SBATCH --output=logs/experiment21_longrun_gta_gtda.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
+
+# uncomment sbatch directives, srun, gpu_per_node to 4, val loss every to 250
 
 module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
 
@@ -40,7 +42,7 @@ DISTRIBUTED_ARGS=(
 # +diff-attention
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp14long_Dragon-L-GDN-dragon3B-adamw \
+    --run_name exp21long_Dragon-L-GDN-gta_gtda_adamw \
     --no-input_norm \
     --no-full_lambdas \
     --eps_rmsnorm 1.0e-6 \
@@ -58,7 +60,8 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --use_kv_sharing \
     --use_swa \
     --qk-norm \
-    --attn_type diff \
+    --attn_type gtda \
+    --local_attn_type gta \
     --lin_attn_type gdn \
     --global_attn_repart middle \
     --expand_factor 2 \
@@ -66,7 +69,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --scalable_softmax \
     --optim adamw \
     --batch_size 128 \
-    --device_batch_size 2 \
+    --device_batch_size 1 \
     --learning_rate 1.605e-3 \
     --num_iterations 66342 \
     --warmup_iters 0.0045 \
