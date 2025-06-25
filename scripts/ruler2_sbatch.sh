@@ -18,11 +18,11 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval.py \
-    --run_dir logs/exp14long_Dragon-L-GDN-May12-no_input_norm-lnsD-attngate_headwise_sigmoid_gateb4norm-adamw_339cbe28 \
+    --run_dir logs/exp21_Dragon-L-GDN-gqa_gtda_adamw_9a399b02 \
     --tasks hellaswag,swde,fda \
 
 python eval.py \
-    --run_dir logs/exp14long_Dragon-L-GDN-May12-no_input_norm-lnsD-gdnattngate_headwise_sigmoid_gateb4norm-adamw_d1ebdb0d \
+    --run_dir logs/exp21_Dragon-L-GDN-gqa_gtda_adamw_9a399b02 \
     --tasks niah_single_3 \
     --prompt_len 512,1024,2048,3074,4096,8192 \
 

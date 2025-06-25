@@ -148,8 +148,6 @@ torch.cuda.synchronize()
 t0 = time.time()
 reset_step = 10 # step at which we reset the timer
 # begin training
-if nconfig.optim == 'splus':
-    optimizers[0].train()
 train_loader.reset()
 wsize = 0
 

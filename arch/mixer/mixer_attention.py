@@ -715,7 +715,7 @@ class MixerGroupedTiedDifferentialAttention(nn.Module):
         idx2 = torch.arange(1, self.n_heads, 2, device=q.device)
         q1, q2 = q[:, :, idx1], q[:, :, idx2]
         k1, k2 = k[:, :, idx1], k[:, :, idx2]
-        v = v.view(B, T, v.size(2) // 2, 2 * v.size(3))
+        v = v.view(B, v.size(1), v.size(2) // 2, 2 * v.size(3))
 
         y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
         y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))

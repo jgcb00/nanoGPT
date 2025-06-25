@@ -3,9 +3,9 @@
 #SBATCH --ntasks-per-node=1 # number of tasks per node
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1         # number of gpus per node
-#SBATCH --time=20:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/1eval_deux.err            # standard error file
-#SBATCH --output=logs/1eval_deux.out           # standard output file
+#SBATCH --time=10:00:00              # time limits: here 1 hour
+#SBATCH --error=logs/4eval.err            # standard error file
+#SBATCH --output=logs/4eval.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -18,11 +18,11 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval.py \
-    --run_dir logs/exp14long_Dragon-L-GDN-adamw_37113992 \
+    --run_dir logs/exp21_Dragon-L-GDN-gta_no_kvsharing-gtda_adamw_876e7561 \
     --tasks hellaswag,swde,fda \
 
 python eval.py \
-    --run_dir logs/exp14long_Dragon-L-GDN-adamw_37113992 \
+    --run_dir logs/exp21_Dragon-L-GDN-gta_no_kvsharing-gtda_adamw_876e7561 \
     --tasks niah_single_3 \
     --prompt_len 512,1024,2048,3074,4096,8192 \
 
