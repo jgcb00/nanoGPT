@@ -4,13 +4,13 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
-#SBATCH --error=logs/experiment14_may12_noinputnorm_fulllambdas_repartMIDDLE.err
-#SBATCH --output=logs/experiment14_may12_noinputnorm_fulllambdas_repartMIDDLE.out
+#SBATCH --error=logs/experiment14.err
+#SBATCH --output=logs/experiment14.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
 
 module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
-source /leonardo_work/BOOST_LCustodi/script/training/flex_fa_training_env/bin/activate
+source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/activate
 
 export WANDB_MODE=offline
 
@@ -38,32 +38,28 @@ DISTRIBUTED_ARGS=(
 # +layer-norm scaling
 # +diff-attention
 
-# For 10B tokens model
-# BS = 297459
-
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp14_Dragon-L-may12_noinputnorm-full_lambdas-repart_middle-adamw \
-    --full-lambdas \
-    --global_attn_repart middle \
-    --n_global_layers 3 \
+    --run_name exp14long_Dragon-L-GDN-adamw \
     --no-input_norm \
-    --rmsnorm_weights \
+    --no-full_lambdas \
     --eps_rmsnorm 1.0e-6 \
-    --rope_to_nope \
     --groupnorm_unique \
     --groupnorm_unique_independent \
+    --rmsnorm_weights \
+    --rope_to_nope \
     --slw_warmup_iters 0.6 \
     --rope_theta_local 163 \
     --model dragon \
     --d_model 1280 \
     --n_heads 20 \
     --n_kv_heads 10 \
-    --n_layers 15 \
+    --n_layers 20 \
     --use_kv_sharing \
     --use_swa \
     --qk-norm \
     --attn_type diff \
     --lin_attn_type gdn \
+    --global_attn_repart middle \
     --expand_factor 2 \
     --layer-norm-scaling \
     --scalable_softmax \

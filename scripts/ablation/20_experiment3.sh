@@ -1,15 +1,15 @@
 #!/bin/bash
-#SBATCH --nodes=8
+#SBATCH --nodes=4
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
-#SBATCH --error=logs/experiment20_longrun_LR411.err
-#SBATCH --output=logs/experiment20_longrun_LR411.out
+#SBATCH --error=logs/experiment20_LR02.err
+#SBATCH --output=logs/experiment20_LR02.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
 
-# uncomment sbatch directives, srun, gpu_per_node to 4, val loss every to 250
+# uncomment sbatch directives, srun, gpu_per_node to 4, val loss every to 250, log wandb
 
 module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
 
@@ -42,7 +42,7 @@ DISTRIBUTED_ARGS=(
 # +diff-attention
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp20long_Dragon-L-GDN-LR4.11_splus \
+    --run_name exp20long_Dragon-L-GDN-LR0.2_splus \
     --no-input_norm \
     --no-full_lambdas \
     --eps_rmsnorm 1.0e-6 \
@@ -67,19 +67,19 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --layer-norm-scaling \
     --scalable_softmax \
     --optim splus \
-    --batch_size 128 \
+    --batch_size 64 \
     --device_batch_size 1 \
-    --learning_rate 4.11 \
-    --num_iterations 66342 \
+    --learning_rate 0.2 \
+    --num_iterations 32990 \
     --warmup_iters 0.0045 \
     --warmdown_iters 0.15 \
     --weight_decay 0.1 \
-    --sequence_length 5888 \
+    --sequence_length 4736 \
     --vocab_size 50304 \
     --input_bin '../nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
     --input_val_bin '../nanoGPT/data/fineweb100B/fineweb_val_*.bin' \
     --val_loss_every 250 \
-    --val_tokens 10174464 \
+    --val_tokens 10002432 \
     --save_every 10000 \
     --eval_benchmarks_tasks 'hellaswag,swde,fda' \
     --eval_benchmarks \

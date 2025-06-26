@@ -84,6 +84,16 @@ class NanoConfig:
     use_gate: bool = True
     expand_v: int = 2
 
+    # LaCT related
+    lact_chunk_size: int = 2048
+    lact_n_heads: int = 4
+    lact_expand_factor: int = 1
+    lact_use_momentum: bool = False
+    lact_use_muon: bool = False
+    lact_w0_w2_low_rank: int = 0 # 0=no low rank, >0 for low rank
+    lact_fw_init_gain: float = 0.5
+    lact_lr_dim: int = 1
+
     # optim
     optim: str = "muon"  # adamw, spam, stable-spam, muon, muon_moonlight, splus
     batch_size: int = 8 * 64  # batch size, in sequences, across all devices

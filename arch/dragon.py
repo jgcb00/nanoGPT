@@ -16,6 +16,7 @@ from arch.mixer.mixer_attention import (
 )
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
+from arch.mixer.mixer_lact import MixerLaCT
 from arch.utils import HeadWiseRMSNorm
 
 ATTN_CLASSES = {
@@ -27,7 +28,8 @@ ATTN_CLASSES = {
 
 LIN_ATTN_CLASSES = {
     "mamba2": MixerMamba2,
-    "gdn": MixerGatedDeltaNet,
+    "gdn":    MixerGatedDeltaNet,
+    "lact":   MixerLaCT,
 }
 
 
@@ -79,11 +81,12 @@ class Block(nn.Module):
                 d_head=self.attn.d_head,
                 eps=config.eps_rmsnorm,
             )
-        self.lin_attn_group_norm = HeadWiseRMSNorm(
-            n_heads=self.lin_attn.n_heads,
-            d_head=self.lin_attn.head_v_dim,
-            eps=config.eps_rmsnorm,
-        )
+
+        if isinstance(self.lin_attn, MixerGatedDeltaNet):
+            self.lin_attn_group_norm = HeadWiseRMSNorm(n_heads=self.lin_attn.n_heads, d_head=self.lin_attn.head_v_dim, eps=config.eps_rmsnorm)
+        else:
+            self.lin_attn_group_norm = HeadWiseRMSNorm(n_heads=self.lin_attn.n_heads, d_head=self.lin_attn.d_head, eps=config.eps_rmsnorm)
+
 
         self.premixer_norm = nn.RMSNorm(
             config.d_model,
