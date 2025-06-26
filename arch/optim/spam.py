@@ -7,6 +7,7 @@ import torch.optim as optim
 from torch import nn
 from torch.optim import Optimizer
 
+
 class CosineDecay:
     """
     Applies cosine decay to a parameter (death_rate), using PyTorch's built-in
@@ -20,7 +21,9 @@ class CosineDecay:
         last_epoch (int, optional): The index of the last epoch. Defaults to -1.
     """
 
-    def __init__(self, death_rate: float, T_max: int, eta_min: float = 0, last_epoch: int = -1):
+    def __init__(
+        self, death_rate: float, T_max: int, eta_min: float = 0, last_epoch: int = -1
+    ):
         self.sgd = optim.SGD(
             torch.nn.ParameterList([torch.nn.Parameter(torch.zeros(1))]),
             lr=death_rate,
@@ -101,9 +104,13 @@ class SPAMAdamW(Optimizer):
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr} - should be >= 0.0")
         if not 0.0 <= betas[0] < 1.0:
-            raise ValueError(f"Invalid beta parameter: {betas[0]} - should be in [0.0, 1.0)")
+            raise ValueError(
+                f"Invalid beta parameter: {betas[0]} - should be in [0.0, 1.0)"
+            )
         if not 0.0 <= betas[1] < 1.0:
-            raise ValueError(f"Invalid beta parameter: {betas[1]} - should be in [0.0, 1.0)")
+            raise ValueError(
+                f"Invalid beta parameter: {betas[1]} - should be in [0.0, 1.0)"
+            )
         if not 0.0 <= eps:
             raise ValueError(f"Invalid epsilon value: {eps} - should be >= 0.0")
 
@@ -193,7 +200,9 @@ class SPAMAdamW(Optimizer):
 
                 grad = p.grad
                 if grad.is_sparse:
-                    raise RuntimeError("Adam does not support sparse gradients. Use SparseAdam instead.")
+                    raise RuntimeError(
+                        "Adam does not support sparse gradients. Use SparseAdam instead."
+                    )
 
                 state = self.state[p]
                 if "step" not in state:
@@ -229,10 +238,17 @@ class SPAMAdamW(Optimizer):
                         mask = (grad**2) > (self.thres * exp_avg_sq1)
                         if self.update_proj_gap != 0:
                             # Only apply after enough accumulation steps
-                            if current_step % self.update_proj_gap >= self.grad_accu_steps:
-                                grad[mask]=grad[mask].sign()*torch.sqrt(exp_avg_sq1[mask]*self.thres)
+                            if (
+                                current_step % self.update_proj_gap
+                                >= self.grad_accu_steps
+                            ):
+                                grad[mask] = grad[mask].sign() * torch.sqrt(
+                                    exp_avg_sq1[mask] * self.thres
+                                )
                         else:
-                            grad[mask]=grad[mask].sign()*torch.sqrt(exp_avg_sq1[mask]*self.thres)
+                            grad[mask] = grad[mask].sign() * torch.sqrt(
+                                exp_avg_sq1[mask] * self.thres
+                            )
 
                 # Update exponential moving averages
                 exp_avg.mul_(beta1).add_(grad, alpha=1.0 - beta1)
@@ -304,7 +320,9 @@ class SPAMAdamW(Optimizer):
                     p.mask = new_mask
         print(f"Mask overlap ratio: {overlap_ratio:.2f}")
 
-    def update_mask_random(self, density: float, p: nn.parameter.Parameter, old_mask: torch.Tensor):
+    def update_mask_random(
+        self, density: float, p: nn.parameter.Parameter, old_mask: torch.Tensor
+    ):
         """
         Create a new random mask with the same density, compute overlap ratio
         with old_mask, and update the exponential moving averages for the
@@ -323,7 +341,7 @@ class SPAMAdamW(Optimizer):
         state = self.state[p]
         non_zero_count = int(density * total_elements)
 
-        new_mask = (torch.rand(p.data.shape, device=p.device) < density)
+        new_mask = torch.rand(p.data.shape, device=p.device) < density
 
         # Calculate overlap ratio
         intersection_mask = new_mask & old_mask
@@ -339,14 +357,18 @@ class SPAMAdamW(Optimizer):
         old_intersection_indices = intersection_mask[old_mask]
 
         exp_avg[new_intersection_indices] = state["exp_avg"][old_intersection_indices]
-        exp_avg_sq[new_intersection_indices] = state["exp_avg_sq"][old_intersection_indices]
+        exp_avg_sq[new_intersection_indices] = state["exp_avg_sq"][
+            old_intersection_indices
+        ]
 
         state["exp_avg"] = exp_avg
         state["exp_avg_sq"] = exp_avg_sq
 
         return new_mask, overlap_ratio
 
-    def initialize_random_rank_boolean_tensor(self, m: int, n: int, density: float) -> torch.Tensor:
+    def initialize_random_rank_boolean_tensor(
+        self, m: int, n: int, density: float
+    ) -> torch.Tensor:
         """
         Create an (m x n) boolean tensor with `density` fraction of True entries.
 

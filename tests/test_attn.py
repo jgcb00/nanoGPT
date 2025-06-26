@@ -2,7 +2,12 @@ import torch
 import torch.nn as nn
 
 from config import NanoConfig
-from arch.mixer.mixer_attention import MixerAttention, Attention, MixerDiffAttention, DiffAttention
+from arch.mixer.mixer_attention import (
+    MixerAttention,
+    Attention,
+    MixerDiffAttention,
+    DiffAttention,
+)
 
 # Set up configuration
 config = NanoConfig()
@@ -18,20 +23,23 @@ config.norm_before_gate = False
 
 # Create model and set seed for reproducibility
 torch.manual_seed(42)
-ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
+ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+
 
 class MyModel(nn.Module):
     def __init__(self, config):
         super(MyModel, self).__init__()
-        self.blocks = nn.ModuleList([
-            Attention(config),
-            Attention(config),
-            Attention(config),
-            Attention(config),
-            Attention(config),
-            Attention(config),
-            Attention(config),
-        ])
+        self.blocks = nn.ModuleList(
+            [
+                Attention(config),
+                Attention(config),
+                Attention(config),
+                Attention(config),
+                Attention(config),
+                Attention(config),
+                Attention(config),
+            ]
+        )
 
     def forward(self, x, caches=None):
         for i, block in enumerate(self.blocks):
@@ -40,12 +48,13 @@ class MyModel(nn.Module):
             if caches is not None:
                 caches[i] = cache
         return x, caches
-    
-model = MyModel(config).to('cuda')
+
+
+model = MyModel(config).to("cuda")
 
 batch_size = 1
 seq_len = 1024
-x = torch.randn(batch_size, seq_len, config.d_model, device='cuda')
+x = torch.randn(batch_size, seq_len, config.d_model, device="cuda")
 
 # Process the full sequence at once (training mode)
 with ctx:
@@ -62,7 +71,7 @@ with torch.no_grad():
     y_chunk = out.clone()
 
     for i in range(10, seq_len):
-        token = x[:, i:i+1, :] # (1, 1, d_model)
+        token = x[:, i : i + 1, :]  # (1, 1, d_model)
         with ctx:
             out, caches = model(token, caches=caches)
         y_step.append(out)

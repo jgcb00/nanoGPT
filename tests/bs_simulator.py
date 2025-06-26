@@ -1,5 +1,3 @@
-
-
 batch_size = 96
 sequence_length = 4736
 device_batch_size = 2
@@ -11,9 +9,15 @@ val_tokens = 10002432
 
 if use_patch_level_training:
     prev_device_batch_size = device_batch_size
-    prev_train_accumulation_steps = batch_size // (prev_device_batch_size * ddp_world_size)
-    device_batch_size = min(patch_size, prev_train_accumulation_steps) * prev_device_batch_size
-    print(f"Using patch-level training. Modifying the device batch size to account for the patch size, from {prev_device_batch_size} to {device_batch_size}.")
+    prev_train_accumulation_steps = batch_size // (
+        prev_device_batch_size * ddp_world_size
+    )
+    device_batch_size = (
+        min(patch_size, prev_train_accumulation_steps) * prev_device_batch_size
+    )
+    print(
+        f"Using patch-level training. Modifying the device batch size to account for the patch size, from {prev_device_batch_size} to {device_batch_size}."
+    )
 
 # convenience variables
 B, T = device_batch_size, sequence_length

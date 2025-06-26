@@ -4,7 +4,7 @@ import torch.nn as nn
 from config import NanoConfig
 from arch.dragon import Dragon
 
-ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
+ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
 
 config = NanoConfig()
 config.d_model = 768
@@ -29,7 +29,7 @@ x = torch.randint(0, 1024, (B, L), device="cuda")
 
 # parallel mode
 with ctx:
-    y_full = model(x) # (B, L, vocab_size)
+    y_full = model(x)  # (B, L, vocab_size)
 
 print(y_full.shape)
 
@@ -42,7 +42,7 @@ with ctx:
 y_chunk = out.clone()
 
 for i in range(10, L):
-    token = x[:, i:i+1]
+    token = x[:, i : i + 1]
     with ctx:
         out, caches = model(token, caches=caches)
     y_step.append(out)

@@ -3,8 +3,8 @@ import os
 
 # put header (val.bin => val_000.bin)
 
-INPUT_FILE  = "../longcrawl64/val.bin"
-OUT_FILE    = "../longcrawl64/val_000.bin"
+INPUT_FILE = "../longcrawl64/val.bin"
+OUT_FILE = "../longcrawl64/val_000.bin"
 HEADER_INTS = 256
 
 num_tokens = os.path.getsize(INPUT_FILE) // 2

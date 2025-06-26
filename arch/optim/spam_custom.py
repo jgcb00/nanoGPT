@@ -7,6 +7,7 @@ import torch.optim as optim
 from torch import nn
 from torch.optim import Optimizer
 
+
 class CosineDecay:
     """
     Applies cosine decay to a parameter (death_rate), using PyTorch's built-in
@@ -20,7 +21,9 @@ class CosineDecay:
         last_epoch (int, optional): The index of the last epoch. Defaults to -1.
     """
 
-    def __init__(self, death_rate: float, T_max: int, eta_min: float = 0, last_epoch: int = -1):
+    def __init__(
+        self, death_rate: float, T_max: int, eta_min: float = 0, last_epoch: int = -1
+    ):
         self.sgd = optim.SGD(
             torch.nn.ParameterList([torch.nn.Parameter(torch.zeros(1))]),
             lr=death_rate,
@@ -111,13 +114,19 @@ class SPAMAdamW(Optimizer):
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr} - should be >= 0.0")
         if not 0.0 <= betas[0] < 1.0:
-            raise ValueError(f"Invalid beta parameter: {betas[0]} - should be in [0.0, 1.0)")
+            raise ValueError(
+                f"Invalid beta parameter: {betas[0]} - should be in [0.0, 1.0)"
+            )
         if not 0.0 <= betas[1] < 1.0:
-            raise ValueError(f"Invalid beta parameter: {betas[1]} - should be in [0.0, 1.0)")
+            raise ValueError(
+                f"Invalid beta parameter: {betas[1]} - should be in [0.0, 1.0)"
+            )
         if not 0.0 <= eps:
             raise ValueError(f"Invalid epsilon value: {eps} - should be >= 0.0")
 
-        assert grad_accu_steps > 0, "grad_accu_steps should be greater than 0 otherwise the model won't train"
+        assert (
+            grad_accu_steps > 0
+        ), "grad_accu_steps should be greater than 0 otherwise the model won't train"
 
         defaults = {
             "lr": lr,
@@ -130,16 +139,18 @@ class SPAMAdamW(Optimizer):
 
         # Initialize state dictionary
         self.state = self.state or defaultdict(dict)
-        
+
         # Add special state variables for the optimizer
         self.state["total_step"] = 0
-        
+
         # Store configuration parameters
         self.warmup_epoch = warmup_epoch
         self.warmup = CosineDecay(0.99, warmup_epoch)  # Warmup after momentum reset
         self.thres = threshold
         self.reset_interval = reset_interval
-        self.grad_accu_steps = grad_accu_steps  # apply threshold limit after this many steps
+        self.grad_accu_steps = (
+            grad_accu_steps  # apply threshold limit after this many steps
+        )
 
     @torch.no_grad()
     def step(self, closure: Callable = None) -> float:
@@ -161,7 +172,9 @@ class SPAMAdamW(Optimizer):
             self.warmup = CosineDecay(0.99, self.warmup_epoch)  # Reset warmup scheduler
 
         # Calculate scale factor based on the cosine decay
-        scale_factor = 1 - self.warmup.get_dr(self.state["total_step"] % self.reset_interval)
+        scale_factor = 1 - self.warmup.get_dr(
+            self.state["total_step"] % self.reset_interval
+        )
         for group in self.param_groups:
             for p in group["params"]:
                 if p.grad is None:
@@ -169,7 +182,9 @@ class SPAMAdamW(Optimizer):
 
                 grad = p.grad
                 if grad.is_sparse:
-                    raise RuntimeError("Adam does not support sparse gradients. Use SparseAdam instead.")
+                    raise RuntimeError(
+                        "Adam does not support sparse gradients. Use SparseAdam instead."
+                    )
 
                 state = self.state[p]
 
@@ -189,11 +204,16 @@ class SPAMAdamW(Optimizer):
                 # Threshold-based gradient masking
                 current_step = self.state["total_step"] + 1
 
-                if self.thres != 0 and current_step % self.reset_interval >= self.grad_accu_steps:
+                if (
+                    self.thres != 0
+                    and current_step % self.reset_interval >= self.grad_accu_steps
+                ):
                     # Only apply after accumulation steps
                     mask = (grad**2) > (self.thres * exp_avg_sq)
                     grad = grad.clone()  # Clone to avoid modifying the original grad
-                    grad[mask] = grad[mask].sign() * torch.sqrt(exp_avg_sq[mask] * self.thres)
+                    grad[mask] = grad[mask].sign() * torch.sqrt(
+                        exp_avg_sq[mask] * self.thres
+                    )
 
                 # Update exponential moving averages
                 exp_avg.mul_(beta1).add_(grad, alpha=1.0 - beta1)
@@ -207,9 +227,9 @@ class SPAMAdamW(Optimizer):
                     steps_since_reset = current_step % self.reset_interval
                     if steps_since_reset == 0:
                         steps_since_reset = self.reset_interval
-                    
-                    bias_correction1 = 1.0 - beta1 ** steps_since_reset
-                    bias_correction2 = 1.0 - beta2 ** steps_since_reset
+
+                    bias_correction1 = 1.0 - beta1**steps_since_reset
+                    bias_correction2 = 1.0 - beta2**steps_since_reset
                     step_size *= math.sqrt(bias_correction2) / bias_correction1
 
                 # Compute normalized gradient
@@ -224,6 +244,7 @@ class SPAMAdamW(Optimizer):
         self.state["total_step"] += 1
 
         return loss
+
 
 # Add this import at the top of the file if needed
 from collections import defaultdict

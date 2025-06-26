@@ -35,6 +35,7 @@ from config import NanoConfig
 # warning: inference is not supported with only one starting token
 # the prompt should be >d_conv tokens long
 
+
 class MixerMamba2(nn.Module):
     def __init__(
         self,
@@ -85,7 +86,7 @@ class MixerMamba2(nn.Module):
         # Order: [z, x, B, C, dt]
         d_in_proj = 2 * self.d_inner + 2 * self.ngroups * self.d_state + self.nheads
         self.in_proj = nn.Linear(self.d_model, d_in_proj, bias=bias, **factory_kwargs)
-        
+
         conv_dim = self.d_ssm + 2 * self.ngroups * self.d_state
         self.conv1d = nn.Conv1d(
             in_channels=conv_dim,
@@ -103,7 +104,8 @@ class MixerMamba2(nn.Module):
 
         # Initialize log dt bias
         dt = torch.exp(
-            torch.rand(self.nheads, **factory_kwargs) * (math.log(dt_max) - math.log(dt_min))
+            torch.rand(self.nheads, **factory_kwargs)
+            * (math.log(dt_max) - math.log(dt_min))
             + math.log(dt_min)
         )
         dt = torch.clamp(dt, min=dt_init_floor)
@@ -115,21 +117,30 @@ class MixerMamba2(nn.Module):
         self.dt_bias._no_weight_decay = True
 
         assert A_init_range[0] > 0 and A_init_range[1] >= A_init_range[0]
-        A = torch.empty(self.nheads, dtype=torch.float32, device=device).uniform_(*A_init_range)
+        A = torch.empty(self.nheads, dtype=torch.float32, device=device).uniform_(
+            *A_init_range
+        )
         A_log = torch.log(A).to(dtype=dtype)
         self.A_log = nn.Parameter(A_log)
         self.A_log._no_weight_decay = True
 
         # D "skip" parameter
-        self.D = nn.Parameter(torch.ones(self.d_ssm if self.D_has_hdim else self.nheads, device=device))
+        self.D = nn.Parameter(
+            torch.ones(self.d_ssm if self.D_has_hdim else self.nheads, device=device)
+        )
         self.D._no_weight_decay = True
 
         # assert not(config.model == "dragon" and self.rmsnorm), "When using Dragon, no output norm should be used."
         if self.rmsnorm:
             assert RMSNormGated is not None
-            self.norm = RMSNormGated(self.d_ssm, eps=1e-5, norm_before_gate=self.norm_before_gate,
-                                     group_size=self.d_ssm // config.ngroups, **factory_kwargs)
-            
+            self.norm = RMSNormGated(
+                self.d_ssm,
+                eps=1e-5,
+                norm_before_gate=self.norm_before_gate,
+                group_size=self.d_ssm // config.ngroups,
+                **factory_kwargs,
+            )
+
             # note about RMSNormGated (f is silu):
             # if norm_before_gate : norm(x) * f(z)
             # else                : norm(x * f(z))
@@ -143,11 +154,11 @@ class MixerMamba2(nn.Module):
         batch, seqlen, dim = u.shape
 
         return_cache = False
-        if cache is not None and seqlen>1:
+        if cache is not None and seqlen > 1:
             # prefill
             cache = None
             return_cache = True
-        
+
         if cache is not None:
             out, cache = self.step(u, cache)
             return out, cache
@@ -155,7 +166,9 @@ class MixerMamba2(nn.Module):
         zxbcdt = self.in_proj(u)  # (B, L, d_in_proj) or (B * L, d_in_proj)
         # If the model is loaded in fp16, without the .float() here, A might be -inf
         A = -torch.exp(self.A_log.float())  # (nheads) or (d_inner, d_state)
-        dt_limit_kwargs = {} if self.dt_limit == (0.0, float("inf")) else dict(dt_limit=self.dt_limit)
+        dt_limit_kwargs = (
+            {} if self.dt_limit == (0.0, float("inf")) else dict(dt_limit=self.dt_limit)
+        )
         if self.use_mem_eff_path:
             out = mamba_split_conv1d_scan_combined(
                 zxbcdt,
@@ -163,7 +176,11 @@ class MixerMamba2(nn.Module):
                 self.conv1d.bias,
                 self.dt_bias,
                 A,
-                D=rearrange(self.D, "(h p) -> h p", p=self.headdim) if self.D_has_hdim else self.D,
+                D=(
+                    rearrange(self.D, "(h p) -> h p", p=self.headdim)
+                    if self.D_has_hdim
+                    else self.D
+                ),
                 chunk_size=self.chunk_size,
                 seq_idx=None,
                 activation=self.activation,
@@ -181,16 +198,26 @@ class MixerMamba2(nn.Module):
                 out, h_cache = out
 
                 # get conv_cache with the last d_conv entries of xBC
-                _, xBC, _ = torch.split(zxbcdt, [self.d_inner, self.d_inner + 2 * self.ngroups * self.d_state, self.nheads], dim=-1)
+                _, xBC, _ = torch.split(
+                    zxbcdt,
+                    [
+                        self.d_inner,
+                        self.d_inner + 2 * self.ngroups * self.d_state,
+                        self.nheads,
+                    ],
+                    dim=-1,
+                )
                 xBC_t = xBC.transpose(1, 2)
-                conv_cache = F.pad(xBC_t, (self.d_conv - xBC_t.shape[-1], 0)) # pad if sequence length is less than self.d_conv; otherwise, truncate
+                conv_cache = F.pad(
+                    xBC_t, (self.d_conv - xBC_t.shape[-1], 0)
+                )  # pad if sequence length is less than self.d_conv; otherwise, truncate
 
                 cache = (h_cache, conv_cache)
-        
+
         else:
             raise NotImplementedError("Not implemented")
         return out, cache
-    
+
     def step(self, u, cache):
         """
         u: (B, 1, D)
@@ -198,19 +225,46 @@ class MixerMamba2(nn.Module):
         """
 
         h_cache, conv_cache = cache
-        
+
         zxbcdt = self.in_proj(u.squeeze(1))  # (B, 2D)
-        d_mlp = (zxbcdt.shape[-1] - 2 * self.d_inner - 2 * self.ngroups * self.d_state - self.nheads) // 2
-        z0, x0, z, xBC, dt = torch.split(zxbcdt, [d_mlp, d_mlp, self.d_inner, self.d_inner + 2 * self.ngroups * self.d_state, self.nheads], dim=-1)
+        d_mlp = (
+            zxbcdt.shape[-1]
+            - 2 * self.d_inner
+            - 2 * self.ngroups * self.d_state
+            - self.nheads
+        ) // 2
+        z0, x0, z, xBC, dt = torch.split(
+            zxbcdt,
+            [
+                d_mlp,
+                d_mlp,
+                self.d_inner,
+                self.d_inner + 2 * self.ngroups * self.d_state,
+                self.nheads,
+            ],
+            dim=-1,
+        )
 
         # conv step
-        xBC = causal_conv1d_update(xBC, conv_cache, rearrange(self.conv1d.weight, "d 1 w -> d w"), self.conv1d.bias, self.activation)
+        xBC = causal_conv1d_update(
+            xBC,
+            conv_cache,
+            rearrange(self.conv1d.weight, "d 1 w -> d w"),
+            self.conv1d.bias,
+            self.activation,
+        )
 
-        x, B, C = torch.split(xBC, [self.d_inner, self.ngroups * self.d_state, self.ngroups * self.d_state], dim=-1)
-        A = -torch.exp(self.A_log.float()) # (n_heads)
+        x, B, C = torch.split(
+            xBC,
+            [self.d_inner, self.ngroups * self.d_state, self.ngroups * self.d_state],
+            dim=-1,
+        )
+        A = -torch.exp(self.A_log.float())  # (n_heads)
 
         # SSM step
-        A = repeat(A, "h -> h p n", p=self.headdim, n=self.d_state).to(dtype=torch.float32)
+        A = repeat(A, "h -> h p n", p=self.headdim, n=self.d_state).to(
+            dtype=torch.float32
+        )
         dt = repeat(dt, "b h -> b h p", p=self.headdim)
         dt_bias = repeat(self.dt_bias, "h -> h p", p=self.headdim)
         D = repeat(self.D, "h -> h p", p=self.headdim)
@@ -219,27 +273,39 @@ class MixerMamba2(nn.Module):
         x_reshaped = rearrange(x, "b (h p) -> b h p", p=self.headdim)
         if not self.rmsnorm:
             z = rearrange(z, "b (h p) -> b h p", p=self.headdim)
-            
-        y = selective_state_update(h_cache, x_reshaped, dt, A, B, C, D, z=z if not self.rmsnorm else None, dt_bias=dt_bias, dt_softplus=True)
+
+        y = selective_state_update(
+            h_cache,
+            x_reshaped,
+            dt,
+            A,
+            B,
+            C,
+            D,
+            z=z if not self.rmsnorm else None,
+            dt_bias=dt_bias,
+            dt_softplus=True,
+        )
         y = rearrange(y, "b h p -> b (h p)")
 
         if self.rmsnorm:
             y = self.norm(y, z)
-        
+
         if d_mlp > 0:
             y = torch.cat([F.silu(z0) * x0, y], dim=-1)
-        
+
         return y.unsqueeze(1), (h_cache, conv_cache)
 
     def get_empty_cache(self):
-        return (None, None) # (h_cache, conv_cache)
+        return (None, None)  # (h_cache, conv_cache)
+
 
 class Mamba2(MixerMamba2):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=False)
-        #self.out_proj.weight.data.zero_()
-    
+        # self.out_proj.weight.data.zero_()
+
     def forward(self, u, cache=None):
         out, cache = super().forward(u, cache=cache)
         out = self.out_proj(out)

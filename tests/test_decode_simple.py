@@ -6,7 +6,7 @@ from config import NanoConfig
 from arch.gpt import GPT
 from arch.lm import NanoLM
 
-ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
+ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
 
 config = NanoConfig()
 config.model = "dragon"
@@ -30,12 +30,13 @@ prompt = torch.randint(0, config.vocab_size, (bsz, 10)).cuda()
 
 with ctx:
     generated1 = lm.generate_naive(prompt, n_tokens=n_tokens, sample=False)
-    generated2 = lm.generate(list(torch.unbind(prompt, dim=0)), n_tokens=[n_tokens]*bsz, samples=False)
+    generated2 = lm.generate(
+        list(torch.unbind(prompt, dim=0)), n_tokens=[n_tokens] * bsz, samples=False
+    )
 
-#print(prompt)
+# print(prompt)
 print(torch.allclose(torch.stack(generated2, 0), generated1))
 diff_count = torch.sum(generated1 != torch.stack(generated2, 0)).item()
-print(diff_count/(bsz*n_tokens))
-#print(generated1)
-#print(torch.stack(generated2, 0))
-
+print(diff_count / (bsz * n_tokens))
+# print(generated1)
+# print(torch.stack(generated2, 0))

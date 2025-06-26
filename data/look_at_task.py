@@ -10,6 +10,7 @@ import pickle
 
 CAPTURED = []
 
+
 class GPT_LM(LM):
     def __init__(self, tokenizer):
         super().__init__()
@@ -21,12 +22,9 @@ class GPT_LM(LM):
         for inst in requests:
             inp, tgt = inst.args
             length = len(self.tokenizer.encode(inp))
-            CAPTURED.append({
-                "task":   inst.task_name,
-                "input":  inp,
-                "target": tgt,
-                "length": length
-            })
+            CAPTURED.append(
+                {"task": inst.task_name, "input": inp, "target": tgt, "length": length}
+            )
         # return dummy scores
         return [(0.0, False) for _ in requests]
 
@@ -35,12 +33,14 @@ class GPT_LM(LM):
         for inst in requests:
             inp, gen_kwargs = inst.args
             length = len(self.tokenizer.encode(inp))
-            CAPTURED.append({
-                "task":   inst.task_name,
-                "input":  inp,
-                "kwargs": gen_kwargs,
-                "length": length
-            })
+            CAPTURED.append(
+                {
+                    "task": inst.task_name,
+                    "input": inp,
+                    "kwargs": gen_kwargs,
+                    "length": length,
+                }
+            )
         # dummy outputs so lm_eval keeps going
         return [""] * len(requests)
 
@@ -53,9 +53,9 @@ def main():
     task = "ruler_qa_squad"
 
     # load tokenizer
-    with open('data/enc.pkl', 'rb') as f:
+    with open("data/enc.pkl", "rb") as f:
         enc_pickled = pickle.load(f)
-    enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
+    enc = tiktoken.core.Encoding(enc_pickled.pop("name"), **enc_pickled)
 
     lm = GPT_LM(enc)
     lm_eval.simple_evaluate(

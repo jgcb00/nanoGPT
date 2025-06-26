@@ -1,6 +1,7 @@
 import math
 import torch
 
+
 # https://github.com/MoonshotAI/Moonlight/blob/master/examples/toy_train.py
 @torch.compile
 def zeropower_via_newtonschulz5(G, steps):
@@ -164,7 +165,7 @@ class Muon(torch.optim.Optimizer):
             ############################
 
             params = [p for p in group["params"] if not self.state[p]["use_muon"]]
-            lr = group['lr']
+            lr = group["lr"]
             beta1, beta2 = group["adamw_betas"]
             eps = group["adamw_eps"]
             weight_decay = group["wd"]

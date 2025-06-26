@@ -12,7 +12,8 @@ from config import NanoConfig
 
 from arch.lm import NanoLM
 
-ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
+ctx = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+
 
 @dataclass
 class Args:
@@ -21,13 +22,16 @@ class Args:
     def __post_init__(self):
         assert self.run_dir.exists(), f"Run directory {self.run_dir} does not exist."
 
+
 args = tyro.cli(Args)
 
 # read config
-with open(args.run_dir / 'config.pkl', 'rb') as f:
+with open(args.run_dir / "config.pkl", "rb") as f:
     config: NanoConfig = pickle.load(f)
 config.rmsnorm = False
-config.disable_scalable_softmax_for_local = False # False for loading old runs, True for newer ones
+config.disable_scalable_softmax_for_local = (
+    False  # False for loading old runs, True for newer ones
+)
 
 # define and load model, tokenizer
 model = get_model(config)
@@ -37,19 +41,19 @@ model_file = sorted(args.run_dir.glob("state_step*.pt"))[-1]
 assert model_file.exists(), f"Model file {model_file} does not exist."
 
 checkpoint = torch.load(model_file)
-state_dict = checkpoint['model']
+state_dict = checkpoint["model"]
 
 new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
 model.load_state_dict(new_state_dict)
 
-with open('data/enc.pkl', 'rb') as f:
+with open("data/enc.pkl", "rb") as f:
     enc_pickled = pickle.load(f)
-enc = tiktoken.core.Encoding(enc_pickled.pop('name'), **enc_pickled)
+enc = tiktoken.core.Encoding(enc_pickled.pop("name"), **enc_pickled)
 
 lm = NanoLM(
-    model=model, 
-    config=config, 
-    enc=enc, 
+    model=model,
+    config=config,
+    enc=enc,
 )
 
 #############
@@ -60,14 +64,19 @@ input_enc = enc.encode(input_str)
 print(input_enc)
 print(len(input_enc))
 
-stop_tokens = ['\n', '.']
+stop_tokens = ["\n", "."]
 stop_tokens = [enc.encode(token)[0] for token in stop_tokens]
 print(stop_tokens)
 
 with ctx:
-    output_enc = lm.generate([torch.tensor(input_enc)], n_tokens=[48], samples=[False], temperatures=[1], stop_tokens=[stop_tokens])
-    #output_enc = lm.generate_naive(torch.tensor(input_enc).unsqueeze(0), n_tokens=48, sample=True, temperature=1)
+    output_enc = lm.generate(
+        [torch.tensor(input_enc)],
+        n_tokens=[48],
+        samples=[False],
+        temperatures=[1],
+        stop_tokens=[stop_tokens],
+    )
+    # output_enc = lm.generate_naive(torch.tensor(input_enc).unsqueeze(0), n_tokens=48, sample=True, temperature=1)
 
-#print(output_enc[0])
+# print(output_enc[0])
 print(enc.decode(output_enc[0].tolist()))
-

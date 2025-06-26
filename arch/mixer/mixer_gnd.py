@@ -16,21 +16,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from fla.modules import FusedRMSNormSwishGate, RMSNorm, ShortConvolution
-from fla.ops.gated_delta_rule import chunk_gated_delta_rule, fused_recurrent_gated_delta_rule
+from fla.ops.gated_delta_rule import (
+    chunk_gated_delta_rule,
+    fused_recurrent_gated_delta_rule,
+)
 
 from config import NanoConfig
 
+
 class MixerGatedDeltaNet(nn.Module):
     def __init__(
-        self,
-        config: NanoConfig,
-        conv_bias=False,
-        conv_init=None,
-        norm_eps=1e-5
+        self, config: NanoConfig, conv_bias=False, conv_init=None, norm_eps=1e-5
     ):
         super().__init__()
         self.config = config
-        
+
         self.d_model = config.d_model
         self.expand_factor = config.expand_factor
         self.expand_v = config.expand_v
@@ -41,7 +41,7 @@ class MixerGatedDeltaNet(nn.Module):
         self.conv_init = conv_init
 
         self.n_heads = config.n_heads
-        self.d_head = int(self.d_model * (self.expand_factor/2)) // self.n_heads
+        self.d_head = int(self.d_model * (self.expand_factor / 2)) // self.n_heads
 
         self.key_dim = self.n_heads * self.d_head
         self.value_dim = self.key_dim * self.expand_v
@@ -52,11 +52,11 @@ class MixerGatedDeltaNet(nn.Module):
         self.n_heads_local = self.n_heads // 1
 
         in_proj_dim = (
-            self.key_dim +  # q_proj
-            self.key_dim +  # k_proj
-            self.value_dim +  # v_proj
-            self.n_heads +  # b_proj
-            self.n_heads  # a_proj
+            self.key_dim  # q_proj
+            + self.key_dim  # k_proj
+            + self.value_dim  # v_proj
+            + self.n_heads  # b_proj
+            + self.n_heads  # a_proj
         )
 
         self.q_slice = slice(0, self.key_dim)
@@ -77,7 +77,7 @@ class MixerGatedDeltaNet(nn.Module):
         dt_min = 0.001
         dt_max = 0.1
         dt_init_floor = 1e-4
-        A_init_range=(1, 16)
+        A_init_range = (1, 16)
 
         # Initialize dt bias so that F.softplus(dt_bias) is between dt_min and dt_max
         dt = torch.exp(
@@ -108,20 +108,14 @@ class MixerGatedDeltaNet(nn.Module):
 
         # ShortConvolution is a wrapper around nn.Conv1d (for definition) and causal_conv1d (for forward)
         self.q_conv1d = ShortConvolution(
-                hidden_size=self.key_dim,
-                kernel_size=self.conv_size,
-                activation='silu'
-            )
+            hidden_size=self.key_dim, kernel_size=self.conv_size, activation="silu"
+        )
         self.k_conv1d = ShortConvolution(
-                hidden_size=self.key_dim,
-                kernel_size=self.conv_size,
-                activation='silu'
-            )
+            hidden_size=self.key_dim, kernel_size=self.conv_size, activation="silu"
+        )
         self.v_conv1d = ShortConvolution(
-                hidden_size=self.value_dim,
-                kernel_size=self.conv_size,
-                activation='silu'
-            )
+            hidden_size=self.value_dim, kernel_size=self.conv_size, activation="silu"
+        )
 
         if self.conv_init is not None:
             nn.init.uniform_(self.q_conv1d.weight, -self.conv_init, self.conv_init)
@@ -131,7 +125,9 @@ class MixerGatedDeltaNet(nn.Module):
         if self.use_gate:
             # gate projection
             if self.config.gate_type_gdn == "elementwise":
-                self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
+                self.g_proj = nn.Linear(
+                    self.d_model, self.d_model * self.expand_factor, bias=False
+                )
             elif self.config.gate_type_gdn == "headwise":
                 self.g_proj = nn.Linear(self.d_model, self.n_heads, bias=False)
             else:
@@ -148,10 +144,10 @@ class MixerGatedDeltaNet(nn.Module):
                 raise ValueError(f"Unknown gate activation: {self.config.gate_act_gdn}")
 
         self.apply(self._initialize_weights)
-    
+
     def _initialize_weights(self, module: nn.Module):
         if isinstance(module, nn.Linear):
-            nn.init.xavier_uniform_(module.weight, gain=2 ** -2.5)
+            nn.init.xavier_uniform_(module.weight, gain=2**-2.5)
             if module.bias is not None:
                 nn.init.zeros_(module.bias)
 
@@ -162,12 +158,12 @@ class MixerGatedDeltaNet(nn.Module):
         """
 
         _, q_len, _ = hidden_states.shape
-        mode = 'fused_recurrent' if q_len <= 64 else 'chunk'
+        mode = "fused_recurrent" if q_len <= 64 else "chunk"
         if self.training:
-            assert mode == 'chunk', "Only chunk mode is supported in training."
+            assert mode == "chunk", "Only chunk mode is supported in training."
 
-        qkvba = self.in_proj(hidden_states) # (b, l, D)
-        
+        qkvba = self.in_proj(hidden_states)  # (b, l, D)
+
         # split proj into q, k, v, b, a
         q_proj = qkvba[:, :, self.q_slice]
         k_proj = qkvba[:, :, self.k_slice]
@@ -179,28 +175,36 @@ class MixerGatedDeltaNet(nn.Module):
         if cache is not None:
             h_cache, q_conv_cache, k_conv_cache, v_conv_cache = cache
 
-        q, q_conv_cache = self.q_conv1d(x=q_proj,
-                             mask=None, 
-                             cache=q_conv_cache,
-                             output_final_state=(cache is not None),
-                             seq_idx=None)
-        k, k_conv_cache = self.k_conv1d(x=k_proj,
-                             mask=None,
-                             cache=k_conv_cache,
-                             output_final_state=(cache is not None),
-                             seq_idx=None)
-        v, v_conv_cache = self.v_conv1d(x=v_proj,
-                             mask=None,
-                             cache=v_conv_cache,
-                             output_final_state=(cache is not None),
-                             seq_idx=None)
-        
-        q, k = map(lambda x: rearrange(x, 'b t (h d) -> b t h d', d=self.head_k_dim), (q, k))
-        v = rearrange(v, 'b t (h d) -> b t h d', d=self.head_v_dim)
+        q, q_conv_cache = self.q_conv1d(
+            x=q_proj,
+            mask=None,
+            cache=q_conv_cache,
+            output_final_state=(cache is not None),
+            seq_idx=None,
+        )
+        k, k_conv_cache = self.k_conv1d(
+            x=k_proj,
+            mask=None,
+            cache=k_conv_cache,
+            output_final_state=(cache is not None),
+            seq_idx=None,
+        )
+        v, v_conv_cache = self.v_conv1d(
+            x=v_proj,
+            mask=None,
+            cache=v_conv_cache,
+            output_final_state=(cache is not None),
+            seq_idx=None,
+        )
+
+        q, k = map(
+            lambda x: rearrange(x, "b t (h d) -> b t h d", d=self.head_k_dim), (q, k)
+        )
+        v = rearrange(v, "b t (h d) -> b t h d", d=self.head_v_dim)
         beta = b_proj.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a_proj.float() + self.dt_bias)
 
-        if mode == 'chunk':
+        if mode == "chunk":
             o, h_cache = chunk_gated_delta_rule(
                 q=q.bfloat16(),
                 k=k.bfloat16(),
@@ -209,11 +213,11 @@ class MixerGatedDeltaNet(nn.Module):
                 beta=beta,
                 initial_state=h_cache,
                 output_final_state=(cache is not None),
-                cu_seqlens=None, # for varlen training
+                cu_seqlens=None,  # for varlen training
                 head_first=False,
-                use_qk_l2norm_in_kernel=True
-            ) # (b t h d) where d is head_v_dim
-        elif mode == 'fused_recurrent':
+                use_qk_l2norm_in_kernel=True,
+            )  # (b t h d) where d is head_v_dim
+        elif mode == "fused_recurrent":
             o, h_cache = fused_recurrent_gated_delta_rule(
                 q=q.bfloat16(),
                 k=k.bfloat16(),
@@ -224,32 +228,42 @@ class MixerGatedDeltaNet(nn.Module):
                 output_final_state=(cache is not None),
                 cu_seqlens=None,
                 head_first=False,
-                use_qk_l2norm_in_kernel=True
-            ) # (b t h d) where d is head_v_dim
+                use_qk_l2norm_in_kernel=True,
+            )  # (b t h d) where d is head_v_dim
         else:
             raise NotImplementedError(f"Not supported mode `{mode}`.")
-        
+
         if self.use_gate:
             # gate
             if self.config.gate_type_gdn == "elementwise":
-                g = self.g_proj(hidden_states).view(o.size(0), o.size(1), o.size(2), o.size(3)) # (B, L, H, D)
+                g = self.g_proj(hidden_states).view(
+                    o.size(0), o.size(1), o.size(2), o.size(3)
+                )  # (B, L, H, D)
             elif self.config.gate_type_gdn == "headwise":
-                g = self.g_proj(hidden_states).view(o.size(0), o.size(1), o.size(2), 1) # (B, L, H, 1)
+                g = self.g_proj(hidden_states).view(
+                    o.size(0), o.size(1), o.size(2), 1
+                )  # (B, L, H, 1)
             else:
                 raise ValueError(f"Unknown gate type: {self.config.gate_type_gdn}")
             o = o * self.act_func_gate(g)
 
         return o, (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
-    
+
     def get_empty_cache(self):
-        return (None, None, None, None) # (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
-    
+        return (
+            None,
+            None,
+            None,
+            None,
+        )  # (h_cache, q_conv_cache, k_conv_cache, v_conv_cache)
+
+
 class GatedDeltaNet(MixerGatedDeltaNet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.out_proj = nn.Linear(self.value_dim, self.d_model, bias=False)
-        #self.out_proj.weight.data.zero_()
-    
+        # self.out_proj.weight.data.zero_()
+
     def forward(self, hidden_states, cache=None):
         out, cache = super().forward(hidden_states, cache=cache)
         out = self.out_proj(out)
