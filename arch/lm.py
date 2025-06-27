@@ -234,7 +234,7 @@ class NanoLM(LM):
 
         max_len_generation = max([len(p) + nt for (p, nt) in zip(prompts, n_tokens)]) # max timestep that wil be reached during generation
         if top_k is not None:
-            top_k = min(top_k, self.vocab_size)
+            top_k = min(top_k, self.config.vocab_size)
 
         input_device = prompts[0].device
         model_device = self.model.transformer.wte.weight.device
@@ -287,6 +287,74 @@ class NanoLM(LM):
 
         generated = [seq[prompts[i].size(0):prompts[i].size(0) + nt].to(input_device) for i, (seq, nt) in enumerate(zip(batched_generated, n_tokens))]
         return generated
+    
+    @torch.no_grad()
+    def generate_stream(self, prompts, n_tokens, sample=True, top_k=None, temperature=1.0):
+        B = len(prompts)
+        min_len = min(prompt.size(0) for prompt in prompts)
+        max_len = max(prompt.size(0) for prompt in prompts)
+
+        max_num_tokens = max(n_tokens)
+
+        max_len_generation = max([len(p) + nt for (p, nt) in zip(prompts, n_tokens)]) # max timestep that wil be reached during generation
+        if top_k is not None:
+            top_k = min(top_k, self.config.vocab_size)
+
+        input_device = prompts[0].device
+        model_device = self.model.transformer.wte.weight.device
+        
+        self.model.eval()
+        
+        padded_prompts = [F.pad(prompt, (0, max_len-prompt.size(0))) for prompt in prompts]
+        padded_prompts = torch.stack(padded_prompts)
+        
+        batched_generated = torch.zeros(B, max_len+max_num_tokens, dtype=torch.long, device=model_device)
+        batched_generated[:, :max_len] = padded_prompts
+        
+        prompt_lengths = torch.tensor([p.size(0) for p in prompts], device=input_device)
+        position_ids = torch.arange(max_len+max_num_tokens, device=input_device).unsqueeze(0).expand(B, -1)
+        active_mask = position_ids < prompt_lengths.unsqueeze(1)
+        active_mask = active_mask.to(model_device)
+
+        # caches is a list of cache, one per layer
+        # cache is composed of : - if Mamba(2) layer : the hidden state, and the last d_conv-1 inputs
+        #                        - if attention layer : the KV cache, ie 2 tensors of shape (B, n_kv_heads, L, d_head)
+        caches = [block.get_empty_cache() for block in self.model.transformer.h]
+
+        # process whole prompt first
+        logits, caches = self.model.forward(batched_generated[:, :min_len], targets=None, caches=caches)
+        next_token_logits = logits[:, -1]
+        next_token_logits[:, self.config.vocab_size_real:] = -float("inf")
+
+        for t in range(min_len, max_len_generation):
+            if sample:
+                probs = F.softmax(next_token_logits / temperature, dim=-1)
+                if top_k:
+                    v, _ = torch.topk(probs, top_k)
+                    probs[probs < v[:, -1, None]] = 0
+                    probs /= probs.sum(1, keepdims=True)
+                next_token = torch.multinomial(probs, 1)          # (B,1)
+            else:
+                next_token = next_token_logits.argmax(-1, keepdim=True)
+
+            # update sequence
+            update_mask = ~active_mask[:, t]
+            batched_generated[:, t] = torch.where(update_mask,
+                                                next_token.squeeze(1),
+                                                batched_generated[:, t])
+
+            # **yield freshly generated tokens**
+            for i in range(B):
+                if update_mask[i]:
+                    yield i, batched_generated[i, t].item()        # (batch-idx, token-id)
+
+            # one-step forward
+            next_token_logits, caches = self.model.forward(
+                batched_generated[:, [t]], targets=None, caches=caches)
+            next_token_logits = next_token_logits.squeeze(1)
+            next_token_logits[:, self.config.vocab_size_real:] = -float("inf")
+
+        self.model.train()
     
     """ [batch=1 only] optimized function, that uses cache and works with batched prompts (of different lengths) """
     @torch.no_grad()
