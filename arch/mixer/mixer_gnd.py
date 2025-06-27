@@ -19,7 +19,7 @@ from fla.modules import FusedRMSNormSwishGate, RMSNorm, ShortConvolution
 from fla.ops.gated_delta_rule import chunk_gated_delta_rule, fused_recurrent_gated_delta_rule
 
 from config import NanoConfig
-from arch.utils import HeadWiseRMSNorm, StatsCollector
+from arch.utils import StatsCollector
 
 class MixerGatedDeltaNet(nn.Module):
     def __init__(

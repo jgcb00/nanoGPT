@@ -29,10 +29,11 @@ from arch.schedulers import get_schedulers
 # next step also will have to do a proper calibration with megatron, ie ensure that results are approx. the same (so need same data)
 # learning rate decay scheduler (linear warmup and warmdown)
 
-torch.backends.cuda.preferred_linalg_library("magma")
-
 nconfig = tyro.cli(NanoConfig)
 assert nconfig.run_name != "", "Please provide a run name for this training run."
+
+if nconfig.optim == "splus":
+    torch.backends.cuda.preferred_linalg_library("magma")
 
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()

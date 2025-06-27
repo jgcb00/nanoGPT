@@ -18,7 +18,7 @@ class NanoConfig:
     expand_factor : int = 1 # expand factor for Mamba/Dragon
     attn_type : str = "normal" # normal, diff
     local_attn_type: str = "normal"
-    lin_attn_type: str = "mamba2" # mamba2, gdn
+    lin_attn_type: str = "mamba2" # mamba2, gdn, lact
     global_attn_repart: str = "hymba" # hymba (beginning,middle,end), middle (3 parts, global @middle of each part)
     rope_theta_global: float = 10000.0
     rope_theta_local: float = 10000.0
@@ -70,7 +70,7 @@ class NanoConfig:
     # LaCT related
     lact_chunk_size: int = 2048
     lact_n_heads: int = 4
-    lact_expand_factor: int = 1
+    lact_expand_factor: int = 2
     lact_use_momentum: bool = False
     lact_use_muon: bool = False
     lact_w0_w2_low_rank: int = 0 # 0=no low rank, >0 for low rank
@@ -133,7 +133,7 @@ class NanoConfig:
         # check for valid attention type
         assert self.attn_type in ["normal", "diff", "gta", "gtda"]
         # check for valid linear attention type
-        assert self.lin_attn_type in ["mamba2", "gdn"]
+        assert self.lin_attn_type in ["mamba2", "gdn", "lact"]
         # check for valid optimizer type
         assert self.optim in ["adamw", "spam", "muon", "stable-spam", "muon_moonlight", "swan", "splus"]
         # check for valid n_heads

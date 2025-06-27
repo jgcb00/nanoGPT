@@ -22,12 +22,12 @@ class MixerLaCT(nn.Module):
         self.config = config
 
         self.d_model = config.d_model
-        self.inter_multi = config.expand_factor*config.lact_expand_factor
+        self.inter_multi = config.lact_expand_factor
 
-        self.qkv = nn.Linear(config.d_model, 3*config.d_model, bias=False)
+        self.qkv = nn.Linear(config.d_model, 3*config.expand_factor*config.d_model, bias=False)
         
-        self.q_norm = RMSNorm(config.d_model)
-        self.k_norm = RMSNorm(config.d_model)
+        self.q_norm = RMSNorm(config.expand_factor*config.d_model)
+        self.k_norm = RMSNorm(config.expand_factor*config.d_model)
 
         #self.rope_theta = rope_theta
         #self.rotary = RotaryEmbedding(dim=self.head_dim, base=self.rope_theta)
@@ -38,7 +38,7 @@ class MixerLaCT(nn.Module):
         assert not(self.use_muon and self.use_momentum), "Cannot use both Muon and Momentum at the same time."
         self.lact_chunk_size = config.lact_chunk_size
         self.n_heads = config.lact_n_heads
-        self.d_head = config.d_model // self.n_heads
+        self.d_head = (config.expand_factor * config.d_model) // self.n_heads
         
         d_in, d_out = self.d_head, self.d_head
         d_h = int(d_in * self.inter_multi)
@@ -132,6 +132,7 @@ class MixerLaCT(nn.Module):
             use_muon=self.use_muon,
             momentum=momentum
         )
+        o = rearrange(o, '(b n_h) s d -> b s n_h d', n_h=self.n_heads)
 
         assert len(o.shape) == 4 #todo temp
 
