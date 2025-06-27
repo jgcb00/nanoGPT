@@ -98,7 +98,7 @@ class Block(nn.Module):
         self.tracker.update('mixer_proj_l2', y_mixer.norm(dim=-1))
 
         # MLP.
-        y_mlp = self.mlp(self.layer_norm_scaling_2 * self.postmixer_norm(x))
+        y_mlp = self.mlp(self.layer_norm_scaling * self.postmixer_norm(x))
         x = x + y_mlp
         self.tracker.update('mlp_fc2_l2', y_mlp.norm(dim=-1))
 

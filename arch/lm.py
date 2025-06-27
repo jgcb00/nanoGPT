@@ -33,8 +33,6 @@ class NanoLM(LM):
         """
 
         self.model.eval()
-
-        self.model.eval()
         print("loglikelihood")
 
         task = requests[0].task_name
