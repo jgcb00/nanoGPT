@@ -25,9 +25,6 @@ class MixerLaCT(nn.Module):
         self.inter_multi = config.lact_expand_factor
 
         self.qkv = nn.Linear(config.d_model, 3*config.expand_factor*config.d_model, bias=False)
-        
-        self.q_norm = RMSNorm(config.expand_factor*config.d_model)
-        self.k_norm = RMSNorm(config.expand_factor*config.d_model)
 
         #self.rope_theta = rope_theta
         #self.rotary = RotaryEmbedding(dim=self.head_dim, base=self.rope_theta)
@@ -81,7 +78,6 @@ class MixerLaCT(nn.Module):
         batch_size, _, _ = hidden_states.size()
 
         q, k, v = self.qkv(hidden_states).chunk(3, dim=-1)
-        q, k = self.q_norm(q), self.k_norm(k)
 
         q = rearrange(q, 'b s (n_h d) -> (b n_h) s d', n_h=self.n_heads)
         k = rearrange(k, 'b s (n_h d) -> (b n_h) s d', n_h=self.n_heads)
