@@ -71,6 +71,8 @@ class NanoConfig:
     lact_chunk_size: int = 2048
     lact_n_heads: int = 4
     lact_expand_factor: int = 2
+    lact_rope: bool = False
+    lact_prenorm: bool = True
     lact_use_momentum: bool = False
     lact_use_muon: bool = False
     lact_w0_w2_low_rank: int = 0 # 0=no low rank, >0 for low rank
