@@ -21,11 +21,6 @@ python eval.py \
     --run_dir logs/exp14long_Dragon-L-GDN-adamw_37113992 \
     --tasks hellaswag,swde,fda \
 
-python eval.py \
-    --run_dir logs/exp14long_Dragon-L-GDN-adamw_37113992 \
-    --tasks niah_single_3 \
-    --prompt_len 512,1024,2048,3074,4096,8192 \
-
 # niah_single_3
 
 # hellaswag,fda,swde

@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
-#SBATCH --error=logs/experiment14.err
-#SBATCH --output=logs/experiment14.out
+#SBATCH --error=logs/experiment14_dragon3B_softcap.err
+#SBATCH --output=logs/experiment14_dragon3B_softcap.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
 
@@ -39,7 +39,8 @@ DISTRIBUTED_ARGS=(
 # +diff-attention
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp14long_Dragon-L-GDN-adamw \
+    --run_name exp14long_Dragon-L-GDN-softcap_diff_50-adamw \
+    --softcap_global_attn 50.0 \
     --no-input_norm \
     --no-full_lambdas \
     --eps_rmsnorm 1.0e-6 \

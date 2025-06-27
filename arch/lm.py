@@ -32,6 +32,8 @@ class NanoLM(LM):
         returns: (loglikelihood of target, is_greedy ie whether decoding greedily gives the target)
         """
 
+        self.model.eval()
+
         print("loglikelihood")
 
         task = requests[0].task_name
@@ -106,6 +108,8 @@ class NanoLM(LM):
         returns: 'end'
         """
 
+        self.model.eval()
+
         print("generate_until")
 
         task = requests[0].task_name
@@ -171,6 +175,7 @@ class NanoLM(LM):
 
     @torch.no_grad()
     def loglikelihood_rolling(self, requests: list[Instance]) -> list[tuple[float, bool]]:
+        self.model.eval()
         print("loglikelihood_rolling not implemented.")
         return
     

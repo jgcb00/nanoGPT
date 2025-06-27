@@ -21,11 +21,6 @@ python eval.py \
     --run_dir logs/exp21_Dragon-L-GDN-gta_no_kvsharing-gtda_adamw_876e7561 \
     --tasks hellaswag,swde,fda \
 
-python eval.py \
-    --run_dir logs/exp21_Dragon-L-GDN-gta_no_kvsharing-gtda_adamw_876e7561 \
-    --tasks niah_single_3 \
-    --prompt_len 512,1024,2048,3074,4096,8192 \
-
 # niah_single_3
 
 # hellaswag,fda,swde

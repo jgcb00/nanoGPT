@@ -4,13 +4,12 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
-#SBATCH --error=logs/experiment14_longrun_dragon3B.err
-#SBATCH --output=logs/experiment14_longrun_dragon3B.out
+#SBATCH --error=logs/experiment14long_dragon3B.err
+#SBATCH --output=logs/experiment14long_dragon3B.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
 
 module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
-
 source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/activate
 
 export WANDB_MODE=offline
@@ -40,7 +39,8 @@ DISTRIBUTED_ARGS=(
 # +diff-attention
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp14long_Dragon-L-GDN-dragon3B-adamw \
+    --run_name exp14_Dragon-L-GDN-dragon3B-softcap_diff_50-adamw \
+    --softcap_global_attn 50.0 \
     --no-input_norm \
     --no-full_lambdas \
     --eps_rmsnorm 1.0e-6 \
