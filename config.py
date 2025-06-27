@@ -53,6 +53,8 @@ class NanoConfig:
     disable_scalable_softmax_for_local: bool = True
     rope_to_nope: bool = False # whether to use the rope-to-nope arch (2501.18795, ie disable RoPE in full attn layers) (only effective if use_swa=True)
     use_gate_attn: bool = False # applies to all attentions (normal and diff)
+    softcap_local_attn: float = 0.0 # logit soft-capping for local attn logits, as per Gemma2 (0.0 = no soft-capping)
+    softcap_global_attn: float = 0.0
 
     # Mamba related
     d_state: int = 128
@@ -101,6 +103,9 @@ class NanoConfig:
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     log_wandb : bool = False # whether to log to wandb
+
+    # testing
+    track_stats: bool = False
 
     # used during training
     slw_window: int = 0

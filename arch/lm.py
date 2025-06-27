@@ -34,6 +34,7 @@ class NanoLM(LM):
 
         self.model.eval()
 
+        self.model.eval()
         print("loglikelihood")
 
         task = requests[0].task_name
@@ -107,9 +108,7 @@ class NanoLM(LM):
         input: ('this is the beginning of the', {'until': ['.']})
         returns: 'end'
         """
-
         self.model.eval()
-
         print("generate_until")
 
         task = requests[0].task_name
@@ -236,7 +235,6 @@ class NanoLM(LM):
         max_num_tokens = max(n_tokens)
 
         max_len_generation = max([len(p) + nt for (p, nt) in zip(prompts, n_tokens)]) # max timestep that wil be reached during generation
-            
         if top_k is not None:
             top_k = min(top_k, self.vocab_size)
 

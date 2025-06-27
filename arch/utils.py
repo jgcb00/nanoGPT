@@ -1,5 +1,8 @@
+import collections
 import torch
 import torch.nn as nn
+
+from config import NanoConfig
 
 # old, kept for evaluating old runs
 """
@@ -16,11 +19,11 @@ class HeadWiseRMSNorm(nn.Module):
         x_norm = x * torch.rsqrt(var + self.eps)               # normalisation RMS
         return x_norm * self.weight.unsqueeze(0).unsqueeze(0)  # (1,1,H,D) → broadcast
 """
-class HeadWiseRMSNorm(torch.nn.Module):
+class HeadWiseRMSNorm(nn.Module):
     def __init__(self, n_heads, d_head, eps=1e-5):
         super().__init__()
-        self.rms = torch.nn.RMSNorm(d_head, eps=eps, elementwise_affine=False)
-        self.weight = torch.nn.Parameter(torch.ones(n_heads, d_head))
+        self.rms = nn.RMSNorm(d_head, eps=eps, elementwise_affine=False)
+        self.weight = nn.Parameter(torch.ones(n_heads, d_head))
 
     def forward(self, x):
         B, L, H, D = x.shape
@@ -45,3 +48,32 @@ def get_model(nconfig):
         case _:
             raise ValueError(f"Model {nconfig.model} not supported")
     return model
+
+class StatsCollector:
+    def __init__(self, config: NanoConfig):
+        self.config = config
+        self._buf = collections.defaultdict(lambda: dict(sum=0., sumsq=0., cnt=0, max=float('-inf')))
+
+    def update(self, name: str, t: torch.Tensor):
+        if not self.config.track_stats: return
+        t = t.float().flatten()
+        b = self._buf[name]
+        b['sum']   += t.sum().item()
+        b['sumsq'] += (t**2).sum().item()
+        b['cnt']   += t.numel()
+        b['max']    = max(b['max'], t.abs().max().item())
+    
+    def get(self, name=None, *, reset=False):
+        src = self._buf if name is None else {name: self._buf[name]}
+        out = {k: dict(
+            mean = v['sum']/v['cnt'],
+            std  = (v['sumsq']/v['cnt']-(v['sum']/v['cnt'])**2)**0.5,
+            max  = v['max']
+        ) for k,v in src.items() if v['cnt']}
+        if reset:
+            for v in src.values():
+                v.update(sum=0., sumsq=0., cnt=0, max=float('-inf'))
+        return out
+
+    def is_enabled(self):
+        return self.config.track_stats

@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.attention.flex_attention import create_block_mask, flex_attention
+
+from arch.utils import StatsCollector
 
 try:
     from flash_attn import flash_attn_func # FA2
@@ -82,6 +83,11 @@ class MixerAttention(nn.Module):
         if config.disable_scalable_softmax_for_local and self.swa:
             self.scalable_softmax = False
         self.use_gate = config.use_gate_attn
+        if self.swa:
+            self.softcap = config.softcap_local_attn
+        else:
+            self.softcap = config.softcap_global_attn
+        print(f'MixerAttention, using softcap: {self.softcap}')
         assert self.d_model % self.n_heads == 0
 
         proj_dim = self.d_head * (self.n_heads + 2 * (0 if kv_share else self.n_kv_heads))
@@ -121,12 +127,15 @@ class MixerAttention(nn.Module):
         self.last_k = None
         self.last_v = None
 
+        self.tracker = StatsCollector(self.config)
+
     def get_query_key_value_tensors(self, hidden_states, key_value_states=None):
         """
         Derives `query`, `key` and `value` tensors from `hidden_states`.
         """
         # Attention heads [sq, b, h] --> [sq, b, ng * (np/ng + 2) * hn)]
         mixed_qkv = self.linear_qkv(hidden_states)
+        self.tracker.update('attn_qkv_l2', mixed_qkv.norm(dim=-1))
 
         # [sq, b, hp] --> [sq, b, ng, (np/ng + 2) * hn]
         if self.kv_share:
@@ -223,6 +232,10 @@ class MixerAttention(nn.Module):
         
         k, v = repeat_kv(k, self.n_kv_repeats), repeat_kv(v, self.n_kv_repeats) # GQA (todo: can be handled by FA)
 
+        if self.tracker.is_enabled():
+            logits = (q.float() @ k.float().transpose(-2, -1)) / math.sqrt(q.size(-1))
+            self.tracker.update('attn_logits', logits)
+
         wsize = self.swa_window_size if self.swa else -1
         if self.config.slw_window > 0:
             if self.swa:
@@ -234,9 +247,9 @@ class MixerAttention(nn.Module):
                     wsize = -1
         
         if FLASH_ATTN_TYPE == "FA2":
-            y = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+            y = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap)
         elif FLASH_ATTN_TYPE == "FA3":
-            y, _ = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+            y, _ = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap)
         else:
             raise ValueError
 
@@ -289,6 +302,11 @@ class MixerDiffAttention(nn.Module):
         if config.disable_scalable_softmax_for_local and self.swa:
             self.scalable_softmax = False
         self.use_gate = config.use_gate_attn
+        if self.swa:
+            self.softcap = config.softcap_local_attn
+        else:
+            self.softcap = config.softcap_global_attn
+        print(f'MixerDiffAttention, using softcap: {self.softcap}')
         self.register_buffer("lambda_init", torch.tensor(0.8 - 0.6 * math.exp(-0.3 * layer_depth)))
         
         head_dim = self.head_dim // 2
@@ -331,6 +349,8 @@ class MixerDiffAttention(nn.Module):
                 self.act_func_gate = F.sigmoid
             else:
                 raise ValueError(f"Unknown gate activation: {self.config.gate_act_attn}")
+        
+        self.tracker = StatsCollector(self.config)
     
     def get_query_key_value_tensors(self, hidden_states, key_value_states=None):
         """
@@ -338,6 +358,7 @@ class MixerDiffAttention(nn.Module):
         """
         # Attention heads [sq, b, h] --> [sq, b, ng * (np/ng + 2) * hn)]
         mixed_qkv = self.linear_qkv(hidden_states)
+        self.tracker.update('attn_qkv_l2', mixed_qkv.norm(dim=-1))
 
         # [sq, b, hp] --> [sq, b, ng, (np/ng + 2) * hn]
         new_tensor_shape = mixed_qkv.size()[:-1] + (
@@ -441,8 +462,15 @@ class MixerDiffAttention(nn.Module):
 
         k1, k2, v = repeat_kv(k1, self.n_kv_repeats), repeat_kv(k2, self.n_kv_repeats), repeat_kv(v, self.n_kv_repeats) # GQA
 
-        y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
-        y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize))
+        if self.tracker.is_enabled():
+            d = q1.size(-1)
+            logits1 = (q1.float() @ k1.float().transpose(-2, -1)) / math.sqrt(d)
+            logits2 = (q2.float() @ k2.float().transpose(-2, -1)) / math.sqrt(d)
+            self.tracker.update('attn_logits1', logits1)
+            self.tracker.update('attn_logits2', logits2)
+
+        y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap)
+        y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap)
         lambda_1 = torch.exp((self.lambda_q1 * self.lambda_k1).sum(-1).float()) # (H)
         lambda_2 = torch.exp((self.lambda_q2 * self.lambda_k2).sum(-1).float()) # (H)
         lambda_full = (lambda_1 - lambda_2 + self.lambda_init).view(1, 1, -1, 1).type_as(y1)

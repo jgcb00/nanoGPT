@@ -1,5 +1,6 @@
 from typing import List
 import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,7 +18,7 @@ from arch.mixer.mixer_attention import (
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 from arch.mixer.mixer_lact import MixerLaCT
-from arch.utils import HeadWiseRMSNorm
+from arch.utils import HeadWiseRMSNorm, StatsCollector
 
 ATTN_CLASSES = {
     "normal": MixerAttention,
@@ -71,6 +72,8 @@ class Block(nn.Module):
         
         self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth+1)) if config.layer_norm_scaling else 1.)
 
+        self.tracker = StatsCollector(config)
+
     def forward(self, x, cache=None):
         external_kv = None
         if self.kv_source is not None:
@@ -90,10 +93,15 @@ class Block(nn.Module):
         y_attn = self.attn_group_norm(y_attn).view(y_attn.size(0), y_attn.size(1), -1)
         y_lin_attn = self.lin_attn_group_norm(y_lin_attn).view(y_lin_attn.size(0), y_lin_attn.size(1), -1)
 
-        x = x + self.out_proj((y_attn + y_lin_attn) / 2)
+        y_mixer = self.out_proj((y_attn + y_lin_attn) / 2)
+        x = x + y_mixer
+        self.tracker.update('mixer_proj_l2', y_mixer.norm(dim=-1))
 
         # MLP.
-        x = x + self.mlp(self.layer_norm_scaling * self.postmixer_norm(x))
+        y_mlp = self.mlp(self.layer_norm_scaling_2 * self.postmixer_norm(x))
+        x = x + y_mlp
+        self.tracker.update('mlp_fc2_l2', y_mlp.norm(dim=-1))
+
         return x if cache is None else (x, (attn_cache, lin_attn_cache))
 
     def get_empty_cache(self):
@@ -201,6 +209,8 @@ class Dragon(nn.Module):
 
         self.apply(self._init_weights)
 
+        self.tracker = StatsCollector(self.config)
+
     def allocate_swas(self, total_layers_count: int, num_global_attention_layers: int):
         base, rem = divmod(total_layers_count - num_global_attention_layers, num_global_attention_layers)
         assert base % 4 == 0, "Locals must be divisible by 4 for equal kv-sharing"
@@ -227,6 +237,8 @@ class Dragon(nn.Module):
         # forward the Dragon model itself
         x = self.transformer.wte(idx) # token embeddings of shape (B, L, d_model)
 
+        self.tracker.update('input_embd', x)
+
         if self.config.input_norm:
             x = self.input_norm(x)
 
@@ -249,6 +261,13 @@ class Dragon(nn.Module):
                     caches[i] = cache
 
         x = self.final_norm(x)
+
+        if self.tracker.is_enabled():
+            B, L, D = x.size()
+            c = 256
+            for h in x.float().split(c, dim=1):
+                logits = (h.reshape(-1, D) @ self.lm_head.weight.float().t()) # (B*c, V)
+                self.tracker.update('output_logits', logits)
 
         if just_logits:
             logits = self.lm_head(x)
