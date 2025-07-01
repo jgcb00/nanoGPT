@@ -1,26 +1,19 @@
 #!/bin/bash
-#SBATCH --nodes=1
+#SBATCH --nodes=4
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:4
-##SBATCH --time=24:00:00
-#SBATCH --error=logs/experiment22_lact_muon_2k_dbg.err
-#SBATCH --output=logs/experiment22_lact_muon_2k_dbg.out
+#SBATCH --time=24:00:00
+#SBATCH --error=logs/experiment24_gateonly.err
+#SBATCH --output=logs/experiment24_gateonly.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
-#SBATCH --time=00:30:00
-#SBATCH --qos=boost_qos_dbg
-# BATCHSIZE 64
-
-# uncomment sbatch directives, distributed args, srun, gpu_per_node to 4, val loss every to 250, log wandb, input bin, nodes, time
+##SBATCH --nodes=1
+##SBATCH --time=00:30:00
+##SBATCH --qos=boost_qos_dbg
 
 module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
 source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/activate
-
-#module load GCC && module load Python/3.12.3 && module load NVHPC && module load cuDNN/9.5.0.50-CUDA-12
-#source /p/project1/jureap140/jupiter_env/bin/activate
-#export TRITON_HOME="/p/project1/jureap140/temp"
-#export WANDB_CACHE_DIR="/p/project1/jureap140/temp"
 
 export WANDB_MODE=offline
 
@@ -49,9 +42,11 @@ DISTRIBUTED_ARGS=(
 # +diff-attention
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name exp22_Dragon-L-GDN-lact_muon_2k-adamw \
-    --lact_chunk_size 1024 \
-    --lact_w0_w2_low_rank 32 \
+    --run_name exp24_Dragon-L-GDN-gateonly-adamw \
+    --use_gate_attn \
+    --no-groupnorm \
+    --mlp_expand 3 \
+    --softcap_global_attn 50.0 \
     --no-input_norm \
     --no-full_lambdas \
     --eps_rmsnorm 1.0e-6 \
@@ -62,24 +57,22 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --slw_warmup_iters 0.6 \
     --rope_theta_local 163 \
     --model dragon \
-    --d_model 1024 \
-    --n_heads 16 \
-    --n_kv_heads 8 \
+    --d_model 1280 \
+    --n_heads 20 \
+    --n_kv_heads 10 \
     --n_layers 20 \
     --use_kv_sharing \
     --use_swa \
     --qk-norm \
-    --attn_type gtda \
-    --local_attn_type normal \
-    --lin_attn_type lact \
-    --lact_use_muon \
+    --attn_type diff \
+    --lin_attn_type gdn \
     --global_attn_repart middle \
     --expand_factor 2 \
     --layer-norm-scaling \
     --scalable_softmax \
     --optim adamw \
-    --batch_size 8 \
-    --device_batch_size 1 \
+    --batch_size 64 \
+    --device_batch_size 2 \
     --learning_rate 9.7e-4 \
     --num_iterations 32990 \
     --warmup_iters 0.0045 \
@@ -96,6 +89,3 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --eval_benchmarks \
     --no-evalpg19 \
     --log_wandb
-
-#--input_bin '/p/project1/jureap140/nanoGPT_atl/data/fineweb100B/fineweb_train_*.bin' \
-#--input_val_bin '/p/project1/jureap140/nanoGPT_atl/data/fineweb100B/fineweb_val_*.bin' \

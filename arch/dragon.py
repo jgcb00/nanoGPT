@@ -41,6 +41,8 @@ class Block(nn.Module):
         """
         super().__init__()
 
+        self.config = config
+
         attn_type = config.local_attn_type if swa else config.attn_type
         cls = ATTN_CLASSES.get(attn_type)
         if cls is None:
@@ -57,14 +59,15 @@ class Block(nn.Module):
         self.kv_source = kv_source
         self.out_proj = nn.Linear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
         
-        if isinstance(self.attn, (MixerDiffAttention, MixerGroupedTiedDifferentialAttention)):
-            self.attn_group_norm = HeadWiseRMSNorm(n_heads=self.attn.n_heads//2, d_head=2*self.attn.head_dim, eps=config.eps_rmsnorm)
-        else:
-            self.attn_group_norm = HeadWiseRMSNorm(n_heads=self.attn.n_heads, d_head=self.attn.d_head, eps=config.eps_rmsnorm)
-        if isinstance(self.lin_attn, MixerGatedDeltaNet):
-            self.lin_attn_group_norm = HeadWiseRMSNorm(n_heads=self.lin_attn.n_heads, d_head=self.lin_attn.head_v_dim, eps=config.eps_rmsnorm)
-        else:
-            self.lin_attn_group_norm = HeadWiseRMSNorm(n_heads=self.lin_attn.n_heads, d_head=self.lin_attn.d_head, eps=config.eps_rmsnorm)
+        if config.groupnorm:
+            if isinstance(self.attn, (MixerDiffAttention, MixerGroupedTiedDifferentialAttention)):
+                self.attn_group_norm = HeadWiseRMSNorm(n_heads=self.attn.n_heads//2, d_head=2*self.attn.head_dim, eps=config.eps_rmsnorm)
+            else:
+                self.attn_group_norm = HeadWiseRMSNorm(n_heads=self.attn.n_heads, d_head=self.attn.d_head, eps=config.eps_rmsnorm)
+            if isinstance(self.lin_attn, MixerGatedDeltaNet):
+                self.lin_attn_group_norm = HeadWiseRMSNorm(n_heads=self.lin_attn.n_heads, d_head=self.lin_attn.head_v_dim, eps=config.eps_rmsnorm)
+            else:
+                self.lin_attn_group_norm = HeadWiseRMSNorm(n_heads=self.lin_attn.n_heads, d_head=self.lin_attn.d_head, eps=config.eps_rmsnorm)
 
         self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.postmixer_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
@@ -89,9 +92,11 @@ class Block(nn.Module):
         # MIXER.
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache) # (B, L, E*D)
         y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache) # (B, L, E*D)
-
-        y_attn = self.attn_group_norm(y_attn).view(y_attn.size(0), y_attn.size(1), -1)
-        y_lin_attn = self.lin_attn_group_norm(y_lin_attn).view(y_lin_attn.size(0), y_lin_attn.size(1), -1)
+        if self.config.groupnorm:
+            y_attn = self.attn_group_norm(y_attn)
+            y_lin_attn = self.lin_attn_group_norm(y_lin_attn)
+        y_attn = y_attn.view(y_attn.size(0), y_attn.size(1), -1)
+        y_lin_attn = y_lin_attn.view(y_lin_attn.size(0), y_lin_attn.size(1), -1)
 
         y_mixer = self.out_proj((y_attn + y_lin_attn) / 2)
         x = x + y_mixer

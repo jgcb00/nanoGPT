@@ -756,9 +756,9 @@ class MixerGroupedTiedDifferentialAttention(nn.Module):
 
         if self.use_gate:
             if self.config.gate_type_attn == "elementwise":
-                g = self.g_proj(hidden_states).view(B, T, self.n_heads, self.head_dim)
+                g = self.g_proj(hidden_states).view(B, T, y.size(2), y.size(3)) # (B, L, H, D)
             else:
-                g = self.g_proj(hidden_states).view(B, T, self.n_heads, 1)
+                g = self.g_proj(hidden_states).view(B, T, y.size(2), 1) # (B, L, H, 1)
             y = y * self.act_func_gate(g)
 
         return y, cache

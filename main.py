@@ -176,8 +176,8 @@ for step in range(nconfig.num_iterations + 1):
 
     # --------------- VALIDATION SECTION -----------------
     if (last_step or (nconfig.val_loss_every > 0 and step % nconfig.val_loss_every == 0)):
-        if nconfig.optim == 'splus':
-            optimizers[0].eval()
+        #if nconfig.optim == 'splus':
+        #    optimizers[0].eval()
 
         # stop the clock
         torch.cuda.synchronize()
