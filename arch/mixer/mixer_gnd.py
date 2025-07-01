@@ -126,7 +126,7 @@ class MixerGatedDeltaNet(nn.Module):
             # gate projection
             if self.config.gate_type_gdn == "elementwise":
                 self.g_proj = nn.Linear(
-                    self.d_model, self.d_model * self.expand_factor, bias=False
+                    self.d_model, self.d_model * self.expand_v, bias=False
                 )
             elif self.config.gate_type_gdn == "headwise":
                 self.g_proj = nn.Linear(self.d_model, self.n_heads, bias=False)
