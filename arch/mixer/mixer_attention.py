@@ -87,7 +87,6 @@ class MixerAttention(nn.Module):
             self.softcap = config.softcap_local_attn
         else:
             self.softcap = config.softcap_global_attn
-        print(f'MixerAttention, using softcap: {self.softcap}')
         assert self.d_model % self.n_heads == 0
 
         proj_dim = self.d_head * (self.n_heads + 2 * (0 if kv_share else self.n_kv_heads))
@@ -306,7 +305,6 @@ class MixerDiffAttention(nn.Module):
             self.softcap = config.softcap_local_attn
         else:
             self.softcap = config.softcap_global_attn
-        print(f'MixerDiffAttention, using softcap: {self.softcap}')
         self.register_buffer("lambda_init", torch.tensor(0.8 - 0.6 * math.exp(-0.3 * layer_depth)))
         
         head_dim = self.head_dim // 2
