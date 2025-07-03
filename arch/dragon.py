@@ -1,5 +1,4 @@
 from typing import List
-import math
 
 import torch
 import torch.nn as nn
@@ -73,6 +72,9 @@ class Block(nn.Module):
         self.postmlp_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.mlp = MLP(config)
 
+        self.register_buffer("sqrt_tau", torch.sqrt(torch.tensor(self.config.uscaling_tau)))
+        self.register_buffer("sqrt_one_minus_tau", torch.sqrt(torch.tensor(1.0 - self.config.uscaling_tau)))
+
         self.tracker = StatsCollector(config)
 
     def forward(self, x, cache=None):
@@ -97,12 +99,12 @@ class Block(nn.Module):
         y_lin_attn = y_lin_attn.view(y_lin_attn.size(0), y_lin_attn.size(1), -1)
 
         y_mixer = self.out_proj((y_attn + y_lin_attn) / 2)
-        x = x + self.postmixer_norm(y_mixer)
+        x = self.sqrt_one_minus_tau * x + self.sqrt_tau * self.postmixer_norm(y_mixer)
         self.tracker.update('mixer_proj_l2', y_mixer.norm(dim=-1))
 
         # MLP.
         y_mlp = self.mlp(x)
-        x = x + self.postmlp_norm(y_mlp)
+        x = self.sqrt_one_minus_tau * x + self.sqrt_tau * self.postmlp_norm(y_mlp)
         self.tracker.update('mlp_fc2_l2', y_mlp.norm(dim=-1))
 
         return x if cache is None else (x, (attn_cache, lin_attn_cache))

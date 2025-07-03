@@ -39,6 +39,7 @@ class NanoConfig:
     input_norm: bool = False
     full_lambdas: bool = False # (n_heads, d_head) if full_lambdas=True, (n_heads,) if False (MG compatibility)
     fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
+    uscaling_tau: float = 0.2
 
     # Attention related
     n_kv_heads : int = 0
