@@ -1,11 +1,14 @@
 from arch.optim.filter_optimizer import create_filtered_optimizer, create_2D_filtered_optimizer
 from config import NanoConfig
 
-def get_optimizers(model, nconfig: NanoConfig, raw_model):
+def get_optimizers(model, nconfig: NanoConfig, raw_model, param_list=None):
     match nconfig.optim:
         case 'adamw':
             from torch.optim import AdamW
-            optimizer = AdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
+            if param_list is None:
+                optimizer = AdamW(model.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay)
+            else:
+                optimizer = AdamW(param_list, betas=(0.9, 0.95))
             optimizers = [optimizer]
         case 'spam':
             from arch.optim.spam import SPAMAdamW

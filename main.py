@@ -19,7 +19,7 @@ import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.attention.flex_attention import create_block_mask
-from arch.utils import get_model
+from arch.utils import get_model, param_groups_mup
 from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 from arch.optim.get_optimizer import get_optimizers
@@ -132,7 +132,11 @@ model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module # always contains the "raw" unwrapped model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 # init the optimizer(s)
-optimizers = get_optimizers(model, nconfig, raw_model)
+if nconfig.use_uscaling:
+    param_list = param_groups_mup(model, base_lr=nconfig.learning_rate, wd=nconfig.weight_decay)
+else:
+    param_list = None
+optimizers = get_optimizers(model, nconfig, raw_model, param_list=param_list)
 schedulers = get_schedulers(optimizers, nconfig)
 
 # begin wandb logging

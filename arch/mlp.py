@@ -8,8 +8,8 @@ class MLP(nn.Module):
 
     def __init__(self, config: NanoConfig):
         super().__init__()
-        self.c_fc    = ScaledLinear(config.d_model, config.mlp_expand * config.d_model, bias=False)
-        self.c_proj  = ScaledLinear(config.mlp_expand * config.d_model, config.d_model, bias=False)
+        self.c_fc    = ScaledLinear(config, config.d_model, config.mlp_expand * config.d_model, bias=False)
+        self.c_proj  = ScaledLinear(config, config.mlp_expand * config.d_model, config.d_model, bias=False)
 
     def forward(self, x):
         x = self.c_fc(x)

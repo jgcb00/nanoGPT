@@ -56,7 +56,7 @@ class Block(nn.Module):
         self.expand_factor = config.expand_factor
 
         self.kv_source = kv_source
-        self.out_proj = ScaledLinear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
+        self.out_proj = ScaledLinear(config, int(self.expand_factor*config.d_model), config.d_model, bias=False)
         
         if config.groupnorm:
             if isinstance(self.attn, (MixerDiffAttention, MixerGroupedTiedDifferentialAttention)):
@@ -72,8 +72,8 @@ class Block(nn.Module):
         self.postmlp_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.mlp = MLP(config)
 
-        self.register_buffer("sqrt_tau", torch.sqrt(torch.tensor(self.config.uscaling_tau)))
-        self.register_buffer("sqrt_one_minus_tau", torch.sqrt(torch.tensor(1.0 - self.config.uscaling_tau)))
+        self.register_buffer("sqrt_tau", torch.sqrt(torch.tensor(self.config.uscaling_tau)) if config.use_uscaling else torch.tensor(1.0))
+        self.register_buffer("sqrt_one_minus_tau", torch.sqrt(torch.tensor(1.0 - self.config.uscaling_tau)) if config.use_uscaling else torch.tensor(1.0))
 
         self.tracker = StatsCollector(config)
 
@@ -210,7 +210,7 @@ class Dragon(nn.Module):
         if self.config.input_norm:
             self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.final_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
-        self.lm_head = ScaledLinear(config.d_model, config.vocab_size, bias=False, alpha=1/config.d_model)
+        self.lm_head = ScaledLinear(config, config.d_model, config.vocab_size, bias=False, alpha=1/config.d_model)
 
         self.apply(self._init_weights)
 

@@ -33,9 +33,12 @@ class HeadWiseRMSNorm(nn.Module):
         return y.view(B, L, H, D)
     
 class ScaledLinear(nn.Linear):
-    def __init__(self, in_features, out_features, bias=False, alpha=None):
+    def __init__(self, config: NanoConfig, in_features, out_features, bias=False, alpha=None):
         super().__init__(in_features, out_features, bias)
-        self.register_buffer("alpha", torch.tensor(1.0 / math.sqrt(in_features)) if alpha is None else torch.tensor(alpha))
+        if config.use_uscaling:
+            self.register_buffer("alpha", torch.tensor(1.0 / math.sqrt(in_features)) if alpha is None else torch.tensor(alpha))
+        else:
+            self.register_buffer("alpha", torch.tensor(1.0))
 
     def forward(self, x):
         return F.linear(x, self.weight, self.bias) * self.alpha
@@ -58,6 +61,48 @@ def get_model(nconfig):
         case _:
             raise ValueError(f"Model {nconfig.model} not supported")
     return model
+
+def param_groups_mup(model, base_lr, wd):
+    groups, seen = [], set()
+    id2name = {id(p): n for n, p in model.named_parameters()}
+
+    for mod in model.modules():
+        if isinstance(mod, nn.Linear):
+            pname = id2name.get(id(mod.weight), "")
+            fan_in = mod.weight.shape[1]
+            scale  = 1 / math.sqrt(fan_in)
+            if "lm_head" in pname:
+                lr_scaled = base_lr
+                print(f"[No Scale] Linear: {pname}  | shape={tuple(mod.weight.shape)}  | lr={lr_scaled:.3e}")
+            else:
+                lr_scaled = base_lr * scale
+                print(f"[Scaled]   Linear: {pname}  | shape={tuple(mod.weight.shape)}  | lr={lr_scaled:.3e}")
+
+            print(f"Linear: {id2name.get(id(mod.weight), '<unnamed>')}  | shape={tuple(mod.weight.shape)}  | lr={lr_scaled:.3e}")
+            groups.append({
+                "params": [mod.weight],
+                "lr": lr_scaled,
+                "weight_decay": wd
+            })
+            seen.add(mod.weight)
+
+            if mod.bias is not None:
+                print(f"Bias:   {id2name.get(id(mod.bias), '<unnamed>')}  | shape={tuple(mod.bias.shape)}  | lr={lr_scaled:.3e}")
+                groups.append({
+                    "params": [mod.bias],
+                    "lr": lr_scaled,
+                    "weight_decay": 0.0
+                })
+                seen.add(mod.bias)
+
+    rest = [p for p in model.parameters() if p not in seen]
+    if rest:
+        print(f"Other params (no fan-in scaling): {len(rest)} tensors")
+        for p in rest:
+            print(f"  {id2name.get(id(p), '<unnamed>')}  | shape={tuple(p.shape)}  | lr={base_lr:.3e}")
+        groups.append({"params": rest, "lr": base_lr, "weight_decay": wd})
+
+    return groups
 
 class StatsCollector:
     def __init__(self, config: NanoConfig):
