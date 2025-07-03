@@ -18,7 +18,7 @@ from arch.mixer.mixer_attention import (
 from arch.mixer.mixer_mamba2 import MixerMamba2
 from arch.mixer.mixer_gnd import MixerGatedDeltaNet
 from arch.mixer.mixer_lact import MixerLaCT
-from arch.utils import HeadWiseRMSNorm, StatsCollector
+from arch.utils import ScaledLinear, HeadWiseRMSNorm, StatsCollector
 
 ATTN_CLASSES = {
     "normal": MixerAttention,
@@ -57,7 +57,7 @@ class Block(nn.Module):
         self.expand_factor = config.expand_factor
 
         self.kv_source = kv_source
-        self.out_proj = nn.Linear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
+        self.out_proj = ScaledLinear(int(self.expand_factor*config.d_model), config.d_model, bias=False)
         
         if config.groupnorm:
             if isinstance(self.attn, (MixerDiffAttention, MixerGroupedTiedDifferentialAttention)):
@@ -210,7 +210,7 @@ class Dragon(nn.Module):
         if self.config.input_norm:
             self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.final_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
-        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+        self.lm_head = ScaledLinear(config.d_model, config.vocab_size, bias=False, alpha=1/config.d_model)
 
         self.apply(self._init_weights)
 
@@ -230,11 +230,11 @@ class Dragon(nn.Module):
     def _init_weights(self, module: nn.Module):
 
         if isinstance(module, (nn.Linear, nn.Conv1d)):
-            nn.init.normal_(module.weight, mean=0.0, std=0.006)
+            nn.init.normal_(module.weight, mean=0.0, std=self.config.init_std)
             if module.bias is not None:
                 nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
-            nn.init.normal_(module.weight, mean=0.0, std=0.006)
+            nn.init.normal_(module.weight, mean=0.0, std=self.config.init_std)
 
     def forward(self, idx, targets=None, scores=None, caches=None, just_logits=False):
         B, L = idx.size()

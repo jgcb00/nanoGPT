@@ -19,7 +19,7 @@ from fla.modules import FusedRMSNormSwishGate, RMSNorm, ShortConvolution
 from fla.ops.gated_delta_rule import chunk_gated_delta_rule, fused_recurrent_gated_delta_rule
 
 from config import NanoConfig
-from arch.utils import StatsCollector
+from arch.utils import ScaledLinear, StatsCollector
 
 class MixerGatedDeltaNet(nn.Module):
     def __init__(
@@ -72,7 +72,7 @@ class MixerGatedDeltaNet(nn.Module):
             2 * self.key_dim + self.value_dim + 2 * self.n_heads,
         )
 
-        self.in_proj = nn.Linear(self.d_model, in_proj_dim, bias=False)
+        self.in_proj = ScaledLinear(self.d_model, in_proj_dim, bias=False)
 
         # hard coded for now todo
         dt_min = 0.001
@@ -132,9 +132,9 @@ class MixerGatedDeltaNet(nn.Module):
         if self.use_gate:
             # gate projection
             if self.config.gate_type_gdn == "elementwise":
-                self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
+                self.g_proj = ScaledLinear(self.d_model, self.d_model*self.expand_factor, bias=False)
             elif self.config.gate_type_gdn == "headwise":
-                self.g_proj = nn.Linear(self.d_model, self.n_heads, bias=False)
+                self.g_proj = ScaledLinear(self.d_model, self.n_heads, bias=False)
             else:
                 raise ValueError(f"Unknown gate type: {self.config.gate_type_gdn}")
 
@@ -254,7 +254,7 @@ class MixerGatedDeltaNet(nn.Module):
 class GatedDeltaNet(MixerGatedDeltaNet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.out_proj = nn.Linear(self.value_dim, self.d_model, bias=False)
+        self.out_proj = ScaledLinear(self.value_dim, self.d_model, bias=False)
         #self.out_proj.weight.data.zero_()
     
     def forward(self, hidden_states, cache=None):

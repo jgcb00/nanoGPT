@@ -1,6 +1,8 @@
 import collections
+import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from config import NanoConfig
 
@@ -29,6 +31,14 @@ class HeadWiseRMSNorm(nn.Module):
         B, L, H, D = x.shape
         y = self.rms(x) * self.weight.view(1, 1, H, D)
         return y.view(B, L, H, D)
+    
+class ScaledLinear(nn.Linear):
+    def __init__(self, in_features, out_features, bias=False, alpha=None):
+        super().__init__(in_features, out_features, bias)
+        self.register_buffer("alpha", torch.tensor(1.0 / math.sqrt(in_features)) if alpha is None else torch.tensor(alpha))
+
+    def forward(self, x):
+        return F.linear(x, self.weight, self.bias) * self.alpha
 
 def get_model(nconfig):
     match nconfig.model:

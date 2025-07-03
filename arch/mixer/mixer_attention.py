@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from arch.utils import StatsCollector
+from arch.utils import ScaledLinear, StatsCollector
 
 try:
     from flash_attn import flash_attn_func # FA2
@@ -90,7 +90,7 @@ class MixerAttention(nn.Module):
         assert self.d_model % self.n_heads == 0
 
         proj_dim = self.d_head * (self.n_heads + 2 * (0 if kv_share else self.n_kv_heads))
-        self.linear_qkv = nn.Linear(self.d_model, proj_dim, bias=False)
+        self.linear_qkv = ScaledLinear(self.d_model, proj_dim, bias=False)
 
         if self.rope:
             if self.swa:
@@ -103,9 +103,9 @@ class MixerAttention(nn.Module):
         if self.use_gate:
             # gate projection
             if self.config.gate_type_attn == "elementwise":
-                self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
+                self.g_proj = ScaledLinear(self.d_model, self.d_model*self.expand_factor, bias=False)
             elif self.config.gate_type_attn == "headwise":
-                self.g_proj = nn.Linear(self.d_model, self.n_heads, bias=False)
+                self.g_proj = ScaledLinear(self.d_model, self.n_heads, bias=False)
             else:
                 raise ValueError(f"Unknown gate type: {self.config.gate_type_attn}")
             
@@ -276,7 +276,7 @@ class Attention(MixerAttention):
         super().__init__(config, swa=swa, kv_share=kv_share)
         
         # output projection
-        self.c_proj = nn.Linear(self.expand_factor * self.d_model, self.d_model, bias=False)
+        self.c_proj = ScaledLinear(self.expand_factor * self.d_model, self.d_model, bias=False)
     
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x, external_kv, cache)
@@ -320,7 +320,7 @@ class MixerDiffAttention(nn.Module):
                 self.k_norm = nn.RMSNorm(self.head_dim, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
 
         assert self.d_model % self.n_heads == 0
-        self.linear_qkv = nn.Linear(self.d_model, self.n_heads*self.head_dim + 2*self.n_kv_heads*self.head_dim, bias=False)
+        self.linear_qkv = ScaledLinear(self.d_model, self.n_heads*self.head_dim + 2*self.n_kv_heads*self.head_dim, bias=False)
         if self.rope:
             if self.swa:
                 self.rotary = Rotary(self.head_dim, base=self.config.rope_theta_local) # 477=3k/(2pi)
@@ -332,9 +332,9 @@ class MixerDiffAttention(nn.Module):
         if self.use_gate:
             # gate projection
             if self.config.gate_type_attn == "elementwise":
-                self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
+                self.g_proj = ScaledLinear(self.d_model, self.d_model*self.expand_factor, bias=False)
             elif self.config.gate_type_attn == "headwise":
-                self.g_proj = nn.Linear(self.d_model, self.n_heads//2, bias=False)
+                self.g_proj = ScaledLinear(self.d_model, self.n_heads//2, bias=False)
             else:
                 raise ValueError(f"Unknown gate type: {self.config.gate_type_attn}")
             
@@ -497,7 +497,7 @@ class DiffAttention(MixerDiffAttention):
         super().__init__(config, swa=swa, kv_share=kv_share, layer_depth=layer_depth)
         
         # output projection
-        self.c_proj = nn.Linear(self.expand_factor * self.d_model, self.d_model, bias=False)
+        self.c_proj = ScaledLinear(self.expand_factor * self.d_model, self.d_model, bias=False)
     
     def forward(self, x, external_kv=None, cache=None):
         y, cache = super().forward(x, external_kv, cache)
@@ -527,8 +527,8 @@ class MixerGroupedTiedAttention(nn.Module):
 
         assert self.d_model % self.n_heads == 0
         n_heads = self.n_heads + self.n_kv_heads if not kv_share else self.n_heads # H+h or H
-        self.linear_qkv = nn.Linear(self.d_model, n_heads * self.d_head, bias=False)
-        self.W_rope_k = nn.Linear(self.d_model, self.d2)
+        self.linear_qkv = ScaledLinear(self.d_model, n_heads * self.d_head, bias=False)
+        self.W_rope_k = ScaledLinear(self.d_model, self.d2)
         if self.qk_norm:
             self.qkv_norm = nn.RMSNorm(self.d_head, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         if self.rope:
@@ -537,9 +537,9 @@ class MixerGroupedTiedAttention(nn.Module):
             self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads, dtype=torch.float32))
         if self.use_gate:
             if self.config.gate_type_attn == "elementwise":
-                self.g_proj = nn.Linear(self.d_model, self.d_model*self.expand_factor, bias=False)
+                self.g_proj = ScaledLinear(self.d_model, self.d_model*self.expand_factor, bias=False)
             elif self.config.gate_type_attn == "headwise":
-                self.g_proj = nn.Linear(self.d_model, self.n_heads//2, bias=False)
+                self.g_proj = ScaledLinear(self.d_model, self.n_heads//2, bias=False)
             else:
                 raise ValueError(f"Unknown gate type: {self.config.gate_type_attn}")
             if self.config.gate_act_attn == "silu":
@@ -658,8 +658,8 @@ class MixerGroupedTiedDifferentialAttention(nn.Module):
         self.use_gate = config.use_gate_attn
 
         total_heads = self.n_heads + (0 if kv_share else self.n_kv_heads)
-        self.linear_qkv = nn.Linear(self.d_model, total_heads * self.head_dim, bias=False)
-        self.W_rope_k = nn.Linear(self.d_model, self.d2)
+        self.linear_qkv = ScaledLinear(self.d_model, total_heads * self.head_dim, bias=False)
+        self.W_rope_k = ScaledLinear(self.d_model, self.d2)
 
         if self.qk_norm:
             self.qkv_norm = nn.RMSNorm(self.head_dim, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
@@ -669,9 +669,9 @@ class MixerGroupedTiedDifferentialAttention(nn.Module):
             self.softmax_scaler = nn.Parameter(torch.ones(self.n_heads, dtype=torch.float32))
         if self.use_gate:
             if config.gate_type_attn == "elementwise":
-                self.g_proj = nn.Linear(self.d_model, self.d_model * self.expand_factor, bias=False)
+                self.g_proj = ScaledLinear(self.d_model, self.d_model * self.expand_factor, bias=False)
             else:
-                self.g_proj = nn.Linear(self.d_model, self.n_heads // 2 if config.gate_type_attn == "headwise" else self.n_heads, bias=False)
+                self.g_proj = ScaledLinear(self.d_model, self.n_heads // 2 if config.gate_type_attn == "headwise" else self.n_heads, bias=False)
             if config.gate_act_attn == "silu":
                 self.act_func_gate = F.silu
             elif config.gate_act_attn == "srelu":
