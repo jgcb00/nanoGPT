@@ -69,11 +69,9 @@ class Block(nn.Module):
             else:
                 self.lin_attn_group_norm = HeadWiseRMSNorm(n_heads=self.lin_attn.n_heads, d_head=self.lin_attn.d_head, eps=config.eps_rmsnorm)
 
-        self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.postmixer_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
+        self.postmlp_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.mlp = MLP(config)
-        
-        self.register_buffer("layer_norm_scaling", torch.tensor(1 / math.sqrt(layer_depth+1)) if config.layer_norm_scaling else 1.)
 
         self.tracker = StatsCollector(config)
 
@@ -87,7 +85,7 @@ class Block(nn.Module):
         else:
             attn_cache, lin_attn_cache = None, None
 
-        hidden = self.layer_norm_scaling * self.input_norm(x) # (B, L, d_model)
+        hidden = x # (B, L, d_model)
         
         # MIXER.
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache) # (B, L, E*D)
@@ -99,12 +97,12 @@ class Block(nn.Module):
         y_lin_attn = y_lin_attn.view(y_lin_attn.size(0), y_lin_attn.size(1), -1)
 
         y_mixer = self.out_proj((y_attn + y_lin_attn) / 2)
-        x = x + y_mixer
+        x = x + self.postmixer_norm(y_mixer)
         self.tracker.update('mixer_proj_l2', y_mixer.norm(dim=-1))
 
         # MLP.
-        y_mlp = self.mlp(self.layer_norm_scaling * self.postmixer_norm(x))
-        x = x + y_mlp
+        y_mlp = self.mlp(x)
+        x = x + self.postmlp_norm(y_mlp)
         self.tracker.update('mlp_fc2_l2', y_mlp.norm(dim=-1))
 
         return x if cache is None else (x, (attn_cache, lin_attn_cache))
