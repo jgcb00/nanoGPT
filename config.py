@@ -91,7 +91,7 @@ class NanoConfig:
     weight_decay : float = 0.
     grad_norm_clip : float = 1.0
     scheduler : str = "wsd" # linear-slow or moonlight
-    init_std : float = 0.006 # initialization std for weights
+    init_std : float = 1 # 0.006 # initialization std for weights
 
     # data
     vocab_size : int = 50304
