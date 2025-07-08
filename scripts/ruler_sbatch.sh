@@ -18,8 +18,13 @@ export HF_DATASETS_OFFLINE="1"
 #export HF_DATASETS_CACHE="/leonardo_work/BOOST_LCustodi/hf_cache"
 
 python eval.py \
-    --run_dir logs/exp14long_Dragon-L-GDN-adamw_37113992 \
+    --run_dir logs/exp25_Dragon-L-GDN-GTA-gateonly-adamw_5d81807b \
     --tasks hellaswag,swde,fda \
+
+python eval.py \
+    --run_dir logs/exp25_Dragon-L-GDN-GTA-gateonly-adamw_5d81807b \
+    --tasks niah_single_3 \
+    --prompt_len 512,1024,2048,4096 \
 
 # niah_single_3
 
