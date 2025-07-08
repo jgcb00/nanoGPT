@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1         # number of gpus per node
 #SBATCH --time=20:00:00              # time limits: here 1 hour
-#SBATCH --error=logs/1eval_deux.err            # standard error file
-#SBATCH --output=logs/1eval_deux.out           # standard output file
+#SBATCH --error=logs/1eval.err            # standard error file
+#SBATCH --output=logs/1eval.out           # standard output file
 #SBATCH --account=BOOST_LCustodi       # account name
 #SBATCH --partition=boost_usr_prod # partition name for prod
 
@@ -24,7 +24,7 @@ python eval.py \
 python eval.py \
     --run_dir logs/exp25_Dragon-L-GDN-GTA-gateonly-adamw_5d81807b \
     --tasks niah_single_3 \
-    --prompt_len 512,1024,2048,4096 \
+    --prompt_len 512,1024,2048,3074,4096,8192 \
 
 # niah_single_3
 

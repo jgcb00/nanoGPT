@@ -35,6 +35,9 @@ assert nconfig.run_name != "", "Please provide a run name for this training run.
 if nconfig.optim == "splus":
     torch.backends.cuda.preferred_linalg_library("magma")
 
+p_state_passing = nconfig.p_state_passing
+nconfig.p_state_passing = 0
+
 # set up DDP (distributed data parallel). torchrun sets this env variable
 assert torch.cuda.is_available()
 dist.init_process_group(
@@ -112,8 +115,14 @@ model = get_model(nconfig)
 num_params = sum(p.numel() for p in model.parameters())
 print0(f"number of parameters: {num_params}")
 nconfig.num_params = num_params
-#model = model.to(torch.bfloat16)
-# only cast specific weights to bfloat16
+# load model checkpoint if provided
+if nconfig.checkpoint:
+    print0(f"Loading model checkpoint from {nconfig.checkpoint}")
+    ckpt = torch.load(nconfig.checkpoint, map_location="cpu", weights_only=False)
+    state_dict = ckpt['model']
+    new_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+    model.load_state_dict(new_state_dict)
+# cast to bfloat16
 with torch.no_grad():
     for module in model.modules():
         if isinstance(module, torch.nn.Embedding):
@@ -173,6 +182,11 @@ for step in range(nconfig.num_iterations + 1):
         window = nconfig.slw_increment * math.ceil(window / nconfig.slw_increment) # quantize
         window = int(min(window, nconfig.sequence_length)) # cap
         nconfig.slw_window = window
+
+    # update the state passing probability
+    if step == nconfig.step_state_passing and p_state_passing > 0:
+        nconfig.p_state_passing = p_state_passing
+        print0(f"Setting p_state_passing to {nconfig.p_state_passing} at step {step}.")
 
     # --------------- VALIDATION SECTION -----------------
     if (last_step or (nconfig.val_loss_every > 0 and step % nconfig.val_loss_every == 0)):

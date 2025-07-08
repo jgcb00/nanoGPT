@@ -150,6 +150,9 @@ class MixerGatedDeltaNet(nn.Module):
 
         self.apply(self._initialize_weights)
 
+        # state passing
+        self.register_buffer("prev_state", None, persistent=False) # (B, H, d_k, d_v)
+
         self.tracker = StatsCollector(config)
 
     def _initialize_weights(self, module: nn.Module):
@@ -157,6 +160,23 @@ class MixerGatedDeltaNet(nn.Module):
             nn.init.xavier_uniform_(module.weight, gain=2 ** -2.5)
             if module.bias is not None:
                 nn.init.zeros_(module.bias)
+
+    def _sample_init_state(self, B):
+        if not self.training or self.prev_state is None:
+            return None
+        if self.prev_state.size(0) != B:
+            return None
+        p = self.config.p_state_passing
+        if p == 0.0:
+            return None
+
+        keep_mask = (torch.rand(B, self.n_heads, device=self.prev_state.device) < p).to(self.prev_state.dtype)
+        keep_mask = keep_mask[..., None, None] # (B, H, 1, 1)
+        return (self.prev_state * keep_mask).detach()
+    
+    def _store_final_state(self, final_state):
+        if self.training and final_state is not None:
+            self.prev_state = final_state.detach()
 
     def forward(self, hidden_states, cache=None):
         """
@@ -208,18 +228,27 @@ class MixerGatedDeltaNet(nn.Module):
         self.tracker.update('lin_attn_gate', g)
 
         if mode == 'chunk':
-            o, h_cache = chunk_gated_delta_rule(
+            if cache is None: # training, state passing
+                init_state = self._sample_init_state(hidden_states.size(0))
+            else: # inference, kv cache
+                init_state = h_cache
+
+            o, final_state = chunk_gated_delta_rule(
                 q=q.bfloat16(),
                 k=k.bfloat16(),
                 v=v.bfloat16(),
                 g=g,
                 beta=beta,
-                initial_state=h_cache,
-                output_final_state=(cache is not None),
+                initial_state=init_state,
+                output_final_state=self.training or (cache is not None),
                 cu_seqlens=None, # for varlen training
                 head_first=False,
                 use_qk_l2norm_in_kernel=True
             ) # (b t h d) where d is head_v_dim
+
+            self._store_final_state(final_state if self.training else None)
+            h_cache = final_state if cache is not None else None
+
         elif mode == 'fused_recurrent':
             o, h_cache = fused_recurrent_gated_delta_rule(
                 q=q.bfloat16(),

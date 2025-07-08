@@ -65,7 +65,9 @@ class NanoConfig:
 
     # GatedDeltaNet related
     use_gate: bool = True
-    expand_v : int = 2
+    expand_v: int = 2
+    p_state_passing: float = 0.0 # probability of state passing (0.0 = no state passing)
+    step_state_passing: int = 0 # step at which to start using the given p_state_passing (0 = start at the beginning of training)
 
     # LaCT related
     lact_chunk_size: int = 2048
@@ -99,6 +101,9 @@ class NanoConfig:
     patch_training_fraction: float = 0.67
     input_bin : str = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
     input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
+
+    # model
+    checkpoint : str = '' # path to a checkpoint to load the model from (it will only init the model. optimizers and schedulers will be re-initialized)
     
     # evaluation and logging
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
