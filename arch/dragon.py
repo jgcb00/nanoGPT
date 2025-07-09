@@ -1,5 +1,6 @@
 from typing import List
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -42,6 +43,7 @@ class Block(nn.Module):
 
         self.config = config
 
+        self.kv_source = kv_source
         attn_type = config.local_attn_type if swa else config.attn_type
         cls = ATTN_CLASSES.get(attn_type)
         if cls is None:
@@ -68,10 +70,12 @@ class Block(nn.Module):
             else:
                 self.lin_attn_group_norm = HeadWiseRMSNorm(n_heads=self.lin_attn.n_heads, d_head=self.lin_attn.d_head, eps=config.eps_rmsnorm)
 
+        self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.postmixer_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
-        self.postmlp_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.mlp = MLP(config)
 
+        self.register_buffer("lns", torch.tensor(1.0) if config.use_uscaling else torch.tensor(1. / math.sqrt(layer_depth)))
+        self.register_buffer("sqrt_2_2", torch.tensor(math.sqrt(2)/2) if config.use_uscaling else torch.tensor(1/2))
         self.register_buffer("sqrt_tau", torch.sqrt(torch.tensor(self.config.uscaling_tau)) if config.use_uscaling else torch.tensor(1.0))
         self.register_buffer("sqrt_one_minus_tau", torch.sqrt(torch.tensor(1.0 - self.config.uscaling_tau)) if config.use_uscaling else torch.tensor(1.0))
 
@@ -87,7 +91,7 @@ class Block(nn.Module):
         else:
             attn_cache, lin_attn_cache = None, None
 
-        hidden = x # (B, L, d_model)
+        hidden = self.lns * self.input_norm(x) # (B, L, d_model)
         
         # MIXER.
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache) # (B, L, E*D)
@@ -98,13 +102,14 @@ class Block(nn.Module):
         y_attn = y_attn.view(y_attn.size(0), y_attn.size(1), -1)
         y_lin_attn = y_lin_attn.view(y_lin_attn.size(0), y_lin_attn.size(1), -1)
 
-        y_mixer = self.out_proj((y_attn + y_lin_attn) / 2)
-        x = self.sqrt_one_minus_tau * x + self.sqrt_tau * self.postmixer_norm(y_mixer)
+        y_mixer = self.out_proj(self.sqrt_2_2 * (y_attn + y_lin_attn))
+        x = self.sqrt_one_minus_tau * x + self.sqrt_tau * y_mixer
+
         self.tracker.update('mixer_proj_l2', y_mixer.norm(dim=-1))
 
         # MLP.
-        y_mlp = self.mlp(x)
-        x = self.sqrt_one_minus_tau * x + self.sqrt_tau * self.postmlp_norm(y_mlp)
+        y_mlp = self.mlp(self.lns * self.postmixer_norm(x))
+        x = self.sqrt_one_minus_tau * x + self.sqrt_tau * y_mlp
         self.tracker.update('mlp_fc2_l2', y_mlp.norm(dim=-1))
 
         return x if cache is None else (x, (attn_cache, lin_attn_cache))
@@ -210,7 +215,7 @@ class Dragon(nn.Module):
         if self.config.input_norm:
             self.input_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
         self.final_norm = nn.RMSNorm(config.d_model, elementwise_affine=config.rmsnorm_weights, eps=config.eps_rmsnorm)
-        self.lm_head = ScaledLinear(config, config.d_model, config.vocab_size, bias=False, alpha=1/config.d_model)
+        self.lm_head = ScaledLinear(config, config.d_model, config.vocab_size, bias=False, alpha_fwd=1/config.d_model, alpha_bwd_x=1/math.sqrt(config.d_model), alpha_bwd_w=1/math.sqrt(config.d_model))
 
         self.apply(self._init_weights)
 

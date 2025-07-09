@@ -214,6 +214,7 @@ class MixerGatedDeltaNet(nn.Module):
                 v=v.bfloat16(),
                 g=g,
                 beta=beta,
+                scale=None if not self.config.use_uscaling else 1/self.head_k_dim,
                 initial_state=h_cache,
                 output_final_state=(cache is not None),
                 cu_seqlens=None, # for varlen training
@@ -227,6 +228,7 @@ class MixerGatedDeltaNet(nn.Module):
                 v=v.bfloat16(),
                 g=g,
                 beta=beta,
+                scale=None if not self.config.use_uscaling else 1/self.head_k_dim,
                 initial_state=h_cache,
                 output_final_state=(cache is not None),
                 cu_seqlens=None,

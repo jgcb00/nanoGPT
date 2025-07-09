@@ -1,3 +1,6 @@
+import math
+
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -10,9 +13,10 @@ class MLP(nn.Module):
         super().__init__()
         self.c_fc    = ScaledLinear(config, config.d_model, config.mlp_expand * config.d_model, bias=False)
         self.c_proj  = ScaledLinear(config, config.mlp_expand * config.d_model, config.d_model, bias=False)
+        self.register_buffer("_2_sqrt_5", torch.tensor(2/math.sqrt(5)) if config.use_uscaling else torch.tensor(1.))
 
     def forward(self, x):
         x = self.c_fc(x)
-        x = F.relu(x).square() # https://arxiv.org/abs/2109.08668v2; ~1-2% better than GELU; suggested by @SKYLINEZ007 and @Grad62304977
+        x = self._2_sqrt_5 * F.relu(x).square() # https://arxiv.org/abs/2109.08668v2; ~1-2% better than GELU; suggested by @SKYLINEZ007 and @Grad62304977
         x = self.c_proj(x)
         return x

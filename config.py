@@ -151,5 +151,6 @@ class NanoConfig:
         if self.attn_type == "diff":
             assert self.n_heads % 2 == 0, "n_heads must be even when using diff attention"
             assert self.n_kv_heads % 2 == 0, "n_kv_heads must be even when using diff attention"
+        assert not(self.fused_loss_computation and self.use_uscaling), "uscaling is not compatible with CCE loss computation"
 
         self.eval_benchmarks_tasks = self.eval_benchmarks_tasks.split(',')

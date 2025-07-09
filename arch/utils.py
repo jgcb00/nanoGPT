@@ -31,17 +31,45 @@ class HeadWiseRMSNorm(nn.Module):
         B, L, H, D = x.shape
         y = self.rms(x) * self.weight.view(1, 1, H, D)
         return y.view(B, L, H, D)
-    
+
+class _ScaledLinearFB(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, weight, bias, alpha_fwd, alpha_bwd_x, alpha_bwd_w):
+        ctx.save_for_backward(x, weight, bias)
+        ctx.alpha_bwd_x = alpha_bwd_x
+        ctx.alpha_bwd_w = alpha_bwd_w
+        return F.linear(x, weight, bias) * alpha_fwd
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        x, weight, bias = ctx.saved_tensors
+        # -------- grads ----------
+        grad_x = torch.matmul(grad_out * ctx.alpha_bwd_x, weight)
+
+        go_flat = (grad_out * ctx.alpha_bwd_w).reshape(-1, grad_out.shape[-1])
+        x_flat  = x.reshape(-1, x.shape[-1])
+        grad_weight = go_flat.t() @ x_flat
+        grad_bias   = go_flat.sum(0) if bias is not None else None
+
+        return grad_x, grad_weight, grad_bias, None, None, None
+
 class ScaledLinear(nn.Linear):
-    def __init__(self, config: NanoConfig, in_features, out_features, bias=False, alpha=None):
+    """Linear layer with different forward/backward scalings."""
+    def __init__(self, config: NanoConfig, in_features, out_features, bias=False, alpha_fwd=None, alpha_bwd_x=None, alpha_bwd_w=None):
         super().__init__(in_features, out_features, bias)
-        if config.use_uscaling:
-            self.register_buffer("alpha", torch.tensor(1.0 / math.sqrt(in_features)) if alpha is None else torch.tensor(alpha))
-        else:
-            self.register_buffer("alpha", torch.tensor(1.0))
+
+        if alpha_fwd is None:
+            alpha_fwd = 1.0 / math.sqrt(in_features)
+
+        if not config.use_uscaling:
+            alpha_fwd, alpha_bwd_x, alpha_bwd_w = 1, 1, 1
+
+        self.register_buffer("alpha_fwd", torch.tensor(float(alpha_fwd)))
+        self.register_buffer("alpha_bwd_x", torch.tensor(float(alpha_bwd_x if alpha_bwd_x is not None else alpha_fwd)))
+        self.register_buffer("alpha_bwd_w", torch.tensor(float(alpha_bwd_w if alpha_bwd_w is not None else alpha_fwd)))
 
     def forward(self, x):
-        return F.linear(x, self.weight, self.bias) * self.alpha
+        return _ScaledLinearFB.apply(x, self.weight, self.bias, self.alpha_fwd, self.alpha_bwd_x, self.alpha_bwd_w)
 
 def get_model(nconfig):
     match nconfig.model:
@@ -70,15 +98,13 @@ def param_groups_mup(model, base_lr, wd):
         if isinstance(mod, nn.Linear):
             pname = id2name.get(id(mod.weight), "")
             fan_in = mod.weight.shape[1]
-            scale  = 1 / math.sqrt(fan_in)
+            scale = 1 / math.sqrt(fan_in)
             if "lm_head" in pname:
                 lr_scaled = base_lr
-                print(f"[No Scale] Linear: {pname}  | shape={tuple(mod.weight.shape)}  | lr={lr_scaled:.3e}")
             else:
                 lr_scaled = base_lr * scale
-                print(f"[Scaled]   Linear: {pname}  | shape={tuple(mod.weight.shape)}  | lr={lr_scaled:.3e}")
 
-            print(f"Linear: {id2name.get(id(mod.weight), '<unnamed>')}  | shape={tuple(mod.weight.shape)}  | lr={lr_scaled:.3e}")
+            #print(f"Linear: {id2name.get(id(mod.weight), '<unnamed>')}  | shape={tuple(mod.weight.shape)}  | lr={lr_scaled:.3e}")
             groups.append({
                 "params": [mod.weight],
                 "lr": lr_scaled,
@@ -87,7 +113,7 @@ def param_groups_mup(model, base_lr, wd):
             seen.add(mod.weight)
 
             if mod.bias is not None:
-                print(f"Bias:   {id2name.get(id(mod.bias), '<unnamed>')}  | shape={tuple(mod.bias.shape)}  | lr={lr_scaled:.3e}")
+                #print(f"Bias:   {id2name.get(id(mod.bias), '<unnamed>')}  | shape={tuple(mod.bias.shape)}  | lr={lr_scaled:.3e}")
                 groups.append({
                     "params": [mod.bias],
                     "lr": lr_scaled,
@@ -97,9 +123,9 @@ def param_groups_mup(model, base_lr, wd):
 
     rest = [p for p in model.parameters() if p not in seen]
     if rest:
-        print(f"Other params (no fan-in scaling): {len(rest)} tensors")
-        for p in rest:
-            print(f"  {id2name.get(id(p), '<unnamed>')}  | shape={tuple(p.shape)}  | lr={base_lr:.3e}")
+        #print(f"Other params (no fan-in scaling): {len(rest)} tensors")
+        #for p in rest:
+            #print(f"  {id2name.get(id(p), '<unnamed>')}  | shape={tuple(p.shape)}  | lr={base_lr:.3e}")
         groups.append({"params": rest, "lr": base_lr, "weight_decay": wd})
 
     return groups

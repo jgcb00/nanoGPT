@@ -246,9 +246,9 @@ class MixerAttention(nn.Module):
                     wsize = -1
         
         if FLASH_ATTN_TYPE == "FA2":
-            y = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap)
+            y = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap, softmax_scale=None if not self.config.use_uscaling else 1/self.d_head)
         elif FLASH_ATTN_TYPE == "FA3":
-            y, _ = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap)
+            y, _ = flash_attn_func(q.bfloat16(), k.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap, softmax_scale=None if not self.config.use_uscaling else 1/self.d_head)
         else:
             raise ValueError
 
@@ -467,8 +467,8 @@ class MixerDiffAttention(nn.Module):
             self.tracker.update('attn_logits1', logits1)
             self.tracker.update('attn_logits2', logits2)
 
-        y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap)
-        y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap)
+        y1 = flex_head_fa.flash_attn_func(q1.bfloat16(), k1.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap, softmax_scale=None if not self.config.use_uscaling else 1/self.head_dim)
+        y2 = flex_head_fa.flash_attn_func(q2.bfloat16(), k2.bfloat16(), v.bfloat16(), causal=True, window_size=(wsize, wsize), softcap=self.softcap, softmax_scale=None if not self.config.use_uscaling else 1/self.head_dim)
         lambda_1 = torch.exp((self.lambda_q1 * self.lambda_k1).sum(-1).float()) # (H)
         lambda_2 = torch.exp((self.lambda_q2 * self.lambda_k2).sum(-1).float()) # (H)
         lambda_full = (lambda_1 - lambda_2 + self.lambda_init).view(1, 1, -1, 1).type_as(y1)

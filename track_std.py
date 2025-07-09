@@ -6,8 +6,9 @@ from config import NanoConfig
 from arch.utils import get_model
 
 B, L = 2, 2048
-d_model, n_heads, n_layers = 256, 4, 20
-nconfig = NanoConfig(model="dragon", use_uscaling=True, init_std=1.0, uscaling_tau=0.2, d_model=d_model, n_heads=n_heads, n_layers=n_layers, n_global_layers=3, global_attn_repart="middle", attn_type="diff", lin_attn_type="gdn")
+d_model, n_heads, n_layers = 1024, 16, 36
+nconfig = NanoConfig(model="dragon", use_uscaling=True, init_std=1.0, uscaling_tau=0.2, d_model=d_model, n_heads=n_heads, n_layers=n_layers, n_global_layers=3, global_attn_repart="middle", attn_type="diff", lin_attn_type="gdn", vocab_size=50000)
+nconfig.groupnorm = True
 
 model = get_model(nconfig)
 model.to("cuda")
@@ -25,5 +26,7 @@ def show_layer_stats(layer: nn.Module, input_shape: Tuple[int, ...]) -> None:
     }.items():
         print(f"{k:>20}.std = {v.item():.2f}")
 
-show_layer_stats(model.transformer.h[0], (B, L, d_model))
+#show_layer_stats(model.transformer.h[0], (B, L, d_model))
 
+h_seq = nn.Sequential(*model.transformer.h)
+show_layer_stats(h_seq, (B, L, d_model))
