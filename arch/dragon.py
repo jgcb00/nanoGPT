@@ -79,8 +79,6 @@ class Block(nn.Module):
         self.register_buffer("sqrt_tau", torch.sqrt(torch.tensor(self.config.uscaling_tau)) if config.use_uscaling else torch.tensor(1.0))
         self.register_buffer("sqrt_one_minus_tau", torch.sqrt(torch.tensor(1.0 - self.config.uscaling_tau)) if config.use_uscaling else torch.tensor(1.0))
 
-        self.tracker = StatsCollector(config)
-
     def forward(self, x, cache=None):
         external_kv = None
         if self.kv_source is not None:
@@ -105,12 +103,9 @@ class Block(nn.Module):
         y_mixer = self.out_proj(self.sqrt_2_2 * (y_attn + y_lin_attn))
         x = self.sqrt_one_minus_tau * x + self.sqrt_tau * y_mixer
 
-        self.tracker.update('mixer_proj_l2', y_mixer.norm(dim=-1))
-
         # MLP.
         y_mlp = self.mlp(self.lns * self.postmixer_norm(x))
         x = self.sqrt_one_minus_tau * x + self.sqrt_tau * y_mlp
-        self.tracker.update('mlp_fc2_l2', y_mlp.norm(dim=-1))
 
         return x if cache is None else (x, (attn_cache, lin_attn_cache))
 
@@ -246,8 +241,6 @@ class Dragon(nn.Module):
 
         # forward the Dragon model itself
         x = self.transformer.wte(idx) # token embeddings of shape (B, L, d_model)
-
-        self.tracker.update('input_embd', x)
 
         if self.config.input_norm:
             x = self.input_norm(x)

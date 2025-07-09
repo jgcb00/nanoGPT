@@ -134,7 +134,6 @@ class MixerAttention(nn.Module):
         """
         # Attention heads [sq, b, h] --> [sq, b, ng * (np/ng + 2) * hn)]
         mixed_qkv = self.linear_qkv(hidden_states)
-        self.tracker.update('attn_qkv_l2', mixed_qkv.norm(dim=-1))
 
         # [sq, b, hp] --> [sq, b, ng, (np/ng + 2) * hn]
         if self.kv_share:
@@ -356,7 +355,6 @@ class MixerDiffAttention(nn.Module):
         """
         # Attention heads [sq, b, h] --> [sq, b, ng * (np/ng + 2) * hn)]
         mixed_qkv = self.linear_qkv(hidden_states)
-        self.tracker.update('attn_qkv_l2', mixed_qkv.norm(dim=-1))
 
         # [sq, b, hp] --> [sq, b, ng, (np/ng + 2) * hn]
         new_tensor_shape = mixed_qkv.size()[:-1] + (

@@ -8,7 +8,6 @@ from arch.utils import ScaledLinear
 from config import NanoConfig
 
 class MLP(nn.Module):
-
     def __init__(self, config: NanoConfig):
         super().__init__()
         self.c_fc    = ScaledLinear(config, config.d_model, config.mlp_expand * config.d_model, bias=False)

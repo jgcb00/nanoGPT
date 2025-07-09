@@ -7,19 +7,17 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
-from dataclasses import dataclass, replace
-from typing import List, Optional, Union
 from einops import rearrange
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from fla.modules import FusedRMSNormSwishGate, RMSNorm, ShortConvolution
+from fla.modules import ShortConvolution
 from fla.ops.gated_delta_rule import chunk_gated_delta_rule, fused_recurrent_gated_delta_rule
 
 from config import NanoConfig
-from arch.utils import ScaledLinear, StatsCollector
+from arch.utils import ScaledLinear
 
 class MixerGatedDeltaNet(nn.Module):
     def __init__(
@@ -150,8 +148,6 @@ class MixerGatedDeltaNet(nn.Module):
 
         self.apply(self._initialize_weights)
 
-        self.tracker = StatsCollector(config)
-
     def _initialize_weights(self, module: nn.Module):
         if isinstance(module, nn.Linear):
             nn.init.xavier_uniform_(module.weight, gain=2 ** -2.5)
@@ -170,8 +166,6 @@ class MixerGatedDeltaNet(nn.Module):
             assert mode == 'chunk', "Only chunk mode is supported in training."
 
         qkvba = self.in_proj(hidden_states) # (b, l, D)
-
-        self.tracker.update('lin_attn_qkvba_l2', qkvba.norm(dim=-1))
         
         # split proj into q, k, v, b, a
         q_proj = qkvba[:, :, self.q_slice]
@@ -204,8 +198,6 @@ class MixerGatedDeltaNet(nn.Module):
         v = rearrange(v, 'b t (h d) -> b t h d', d=self.head_v_dim)
         beta = b_proj.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a_proj.float() + self.dt_bias)
-
-        self.tracker.update('lin_attn_gate', g)
 
         if mode == 'chunk':
             o, h_cache = chunk_gated_delta_rule(

@@ -6,21 +6,6 @@ import torch.nn.functional as F
 
 from config import NanoConfig
 
-# old, kept for evaluating old runs
-"""
-class HeadWiseRMSNorm(nn.Module):
-    def __init__(self, n_heads, d_head, eps=1e-5):
-        super().__init__()
-        self.eps = eps
-        # poids distinct par tête
-        self.weight = nn.Parameter(torch.ones(n_heads, d_head))
-
-    def forward(self, x):
-        # x: (B, T, H, D)
-        var = x.pow(2).mean(dim=-1, keepdim=True)               # (B, T, H, 1)
-        x_norm = x * torch.rsqrt(var + self.eps)               # normalisation RMS
-        return x_norm * self.weight.unsqueeze(0).unsqueeze(0)  # (1,1,H,D) → broadcast
-"""
 class HeadWiseRMSNorm(nn.Module):
     def __init__(self, n_heads, d_head, eps=1e-5):
         super().__init__()

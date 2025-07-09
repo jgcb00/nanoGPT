@@ -90,10 +90,6 @@ def show_layer_stats(model: nn.Module) -> str:
     loss = model(x, targets=y)
     loss.backward()
 
-    #for n, p in model.named_parameters():
-    #    print(f"{n}: {p.shape}  |  std={p.std().item():.4f}  |  grad.std={p.grad.std().item():.8f}")
-    #return None
-
     # ----- collect stats (weight / grad / act) ----- #
     raw_stats = {}
     for n, p in model.named_parameters():
