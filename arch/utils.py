@@ -1,5 +1,10 @@
 import collections
+import re
+from typing import Dict
+from functools import partial
+from collections import defaultdict
 import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -75,7 +80,7 @@ def get_model(nconfig):
             raise ValueError(f"Model {nconfig.model} not supported")
     return model
 
-def param_groups_mup(model, base_lr, wd):
+def param_groups_mup(model, base_lr_hidden, base_lr_other, wd):
     groups, seen = [], set()
     id2name = {id(p): n for n, p in model.named_parameters()}
 
@@ -85,33 +90,32 @@ def param_groups_mup(model, base_lr, wd):
             fan_in = mod.weight.shape[1]
             scale = 1 / math.sqrt(fan_in)
             if "lm_head" in pname:
-                lr_scaled = base_lr
+                lr_scaled = base_lr_other
             else:
-                lr_scaled = base_lr * scale
+                lr_scaled = base_lr_hidden * scale
 
-            #print(f"Linear: {id2name.get(id(mod.weight), '<unnamed>')}  | shape={tuple(mod.weight.shape)}  | lr={lr_scaled:.3e}")
-            groups.append({
-                "params": [mod.weight],
-                "lr": lr_scaled,
-                "weight_decay": wd
-            })
+            #print(f"{pname} | shape={tuple(mod.weight.shape)} | lr={lr_scaled:.3e}")
+            groups.append({"params": [mod.weight], "lr": lr_scaled, "weight_decay": wd/lr_scaled})
             seen.add(mod.weight)
 
             if mod.bias is not None:
-                #print(f"Bias:   {id2name.get(id(mod.bias), '<unnamed>')}  | shape={tuple(mod.bias.shape)}  | lr={lr_scaled:.3e}")
-                groups.append({
-                    "params": [mod.bias],
-                    "lr": lr_scaled,
-                    "weight_decay": 0.0
-                })
+                groups.append({"params": [mod.bias], "lr": lr_scaled, "weight_decay": 0.0})
                 seen.add(mod.bias)
 
-    rest = [p for p in model.parameters() if p not in seen]
-    if rest:
-        #print(f"Other params (no fan-in scaling): {len(rest)} tensors")
-        #for p in rest:
-            #print(f"  {id2name.get(id(p), '<unnamed>')}  | shape={tuple(p.shape)}  | lr={base_lr:.3e}")
-        groups.append({"params": rest, "lr": base_lr, "weight_decay": wd})
+    for p in model.parameters():
+        if p in seen:
+            continue
+        pname = id2name.get(id(p), "<unnamed>")
+
+        if pname == "module._orig_mod.transformer.wte.weight":
+            fan_out = p.shape[1] # nn.Embedding is transposed
+            #lr_scaled = base_lr / math.sqrt(fan_out) # u-muP
+            lr_scaled = base_lr_other
+        else:
+            lr_scaled = base_lr_other
+
+        #print(f"  {pname} | shape={tuple(p.shape)} | lr={lr_scaled:.3e}")
+        groups.append({"params": [p], "lr": lr_scaled, "weight_decay": 0.})
 
     return groups
 
@@ -143,3 +147,95 @@ class StatsCollector:
 
     def is_enabled(self):
         return self.config.track_stats
+
+_layer_pat = re.compile(r"\.h\.(\d+)\.")
+_stat_pat = re.compile(r"(\.grad\.(?:std|mean|l1)|\.act\.(?:std|mean|l1)|\.(?:std|mean|l1))$")
+
+def l1(x: torch.Tensor) -> float:
+    return x.abs().mean().item()
+
+@torch._dynamo.disable
+def _capture(name: str, store: Dict[str, torch.Tensor], _m, _inp, out):
+    """Save every tensor produced by a module so that we can measure activations."""
+    def walk(x, suf=""):
+        if torch.is_tensor(x):
+            store[f"{name}{suf}"] = x.detach()
+        elif isinstance(x, (list, tuple)):
+            for i, xi in enumerate(x):
+                walk(xi, suf + f"[{i}]")
+    walk(out)
+
+def _layer_idx(key: str) -> int:
+    """Return integer index of the transformer block found in the key."""
+    m = _layer_pat.search(key)
+    return int(m.group(1)) if m else -1  # -1 for non‑layer params
+
+def _base_key(key: str) -> str:
+    """Return <parameter‑suffix>.<stat> (e.g. attn.k_norm.act.std) to serve as aggregation key."""
+    # Slice off the transformer prefix and layer index
+    pre_cut = _layer_pat.sub(".", key)  # remove ".h.<idx>." keeping one dot
+    # Remove leading "transformer." (if present)
+    pre_cut = pre_cut.split("transformer.")[-1]
+    # Ensure we still include the stat suffix (.std / .grad.std / .act.std)
+    stat_match = _stat_pat.search(pre_cut)
+    assert stat_match, f"No stat suffix in key {key}"
+    stat_suffix = stat_match.group(1)
+    # Remove everything up to the stat suffix and rebuild
+    base_no_stat = pre_cut[: -len(stat_suffix)]
+    return f"{base_no_stat}{stat_suffix}"
+
+class StatCapture:
+    """Context-manager that grabs activations + grads for ONE forward/backward."""
+    def __init__(self, model):
+        self.model, self.n_layers = model, 20 # model.config.n_layers
+        self.acts, self.hooks = {}, []
+
+    def __enter__(self):
+        for n, m in self.model.named_modules():
+            if m is self.model:               # skip root
+                continue
+            self.hooks.append(
+                m.register_forward_hook(partial(_capture, n, self.acts))
+            )
+        return self
+
+    def collect(self):
+        """After backward(), build the stats dict exactly like your script."""
+        raw_stats = {}
+        for n, p in self.model.named_parameters():
+            raw_stats[f"{n}.std"]     = p.std().item()
+            raw_stats[f"{n}.l1"]      = l1(p)
+            if p.grad is not None:
+                raw_stats[f"{n}.grad.std"] = p.grad.std().item()
+                raw_stats[f"{n}.grad.l1"]  = l1(p.grad)
+        for n, a in self.acts.items():
+            raw_stats[f"{n}.act.std"] = a.std().item()
+            raw_stats[f"{n}.act.l1"]  = l1(a)
+        self.acts.clear()
+
+        # --- aggregate across layers (unchanged from your script) ---
+        agg = defaultdict(lambda: [None] * self.n_layers)
+        flat = {}
+        for k, v in raw_stats.items():
+            layer = _layer_idx(k)
+            if layer == -1:
+                flat[k] = v
+            else:
+                agg[_base_key(k)][layer] = v
+        merged = {**flat, **agg}
+
+        stats = {}
+        pad = len(str(self.n_layers - 1))
+        for k, v in merged.items():
+            if isinstance(v, list):
+                for i, val in enumerate(v):
+                    if val is not None:
+                        stats[f"inspect/{k}.layer{i:0{pad}}"] = val
+            else:
+                stats[f"inspect/{k}"] = v
+        return stats
+
+    def __exit__(self, exc_type, exc, tb):
+        for h in self.hooks:
+            h.remove()
+        self.hooks.clear()

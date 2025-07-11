@@ -1,10 +1,10 @@
 from typing import List, Dict
-import json
 import re
 import torch
 import torch.nn as nn
 from functools import partial
 from collections import defaultdict
+import wandb
 
 from config import NanoConfig
 from arch.utils import get_model
@@ -30,6 +30,9 @@ model.to("cuda")
 
 # ---------- helpers ---------- #
 
+def l1(x: torch.Tensor) -> float:
+    return x.abs().mean().item()
+
 def _capture(name: str, store: Dict[str, torch.Tensor], _m, _inp, out):
     """Save every tensor produced by a module so that we can measure activations."""
     def walk(x, suf=""):
@@ -41,13 +44,12 @@ def _capture(name: str, store: Dict[str, torch.Tensor], _m, _inp, out):
     walk(out)
 
 _layer_pat = re.compile(r"\.h\.(\d+)\.")
-_stat_pat = re.compile(r"(\.grad\.(?:std|mean)|\.act\.(?:std|mean)|\.(?:std|mean))$")
+_stat_pat = re.compile(r"(\.grad\.(?:std|mean|l1)|\.act\.(?:std|mean|l1)|\.(?:std|mean|l1))$")
 
 def _layer_idx(key: str) -> int:
     """Return integer index of the transformer block found in the key."""
     m = _layer_pat.search(key)
     return int(m.group(1)) if m else -1  # -1 for non‑layer params
-
 
 def _base_key(key: str) -> str:
     """Return <parameter‑suffix>.<stat> (e.g. attn.k_norm.act.std) to serve as aggregation key."""
@@ -78,6 +80,9 @@ def show_layer_stats(model: nn.Module) -> str:
     Layers that do not have a value for a given statistic are represented with null.
     Non‑layer parameters (e.g., embeddings) are kept flat as a single key‑value pair.
     """
+
+    PAD = len(str(model.config.n_layers - 1))
+
     # ----- collect activations ----- #
     acts, hooks = {}, []
     for n, m in model.named_modules():
@@ -94,11 +99,16 @@ def show_layer_stats(model: nn.Module) -> str:
     raw_stats = {}
     for n, p in model.named_parameters():
         raw_stats[f"{n}.std"]      = p.std().item()
-        raw_stats[f"{n}.grad.std"] = p.grad.std().item()
-        #raw_stats[f"{n}.grad.mean"]  = p.grad.mean().item()
+        #raw_stats[f"{n}.mean"]     = p.mean().item()
+        raw_stats[f"{n}.l1"]       = l1(p)
+        if p.grad is not None:
+            raw_stats[f"{n}.grad.std"]  = p.grad.std().item()
+            #raw_stats[f"{n}.grad.mean"] = p.grad.mean().item()
+            raw_stats[f"{n}.grad.l1"]   = l1(p.grad)
     for n, a in acts.items():
         raw_stats[f"{n}.act.std"]  = a.std().item()
-        #raw_stats[f"{n}.act.mean"]   = a.mean().item()
+        #raw_stats[f"{n}.act.mean"] = a.mean().item()
+        raw_stats[f"{n}.act.l1"]   = l1(a)
 
     # ----- aggregate across layers ----- #
     agg: Dict[str, List] = defaultdict(lambda: [None] * n_layers)
@@ -120,18 +130,17 @@ def show_layer_stats(model: nn.Module) -> str:
     # ----- merge flat & aggregated ----- #
     merged = {**flat, **agg}
 
-    # Sort keys alphabetically so related entries stay grouped
-    ordered = {k: merged[k] for k in sorted(merged)}
+    stats = {}
+    for k, v in merged.items():
+        if isinstance(v, list):
+            for i, val in enumerate(v):
+                if val is not None:
+                    stats[f"inspect/{k}.layer{i:0{PAD}}"] = val
+        else:
+            stats[f"inspect/{k}"] = v
+    return stats
 
-    blob = json.dumps(ordered, indent=2)
-    for h in hooks:
-        h.remove()
-    return blob
-
-filename = "layer_stats.json" if uscaling else "layer_stats_baseline.json"
-
-json_blob = show_layer_stats(model)
-with open(filename, "w") as f:
-    if json_blob:
-        f.write(json_blob)
-print(f"✅ Saved layer stats to {filename} ✅")
+wandb.init(project="nanoGPT")
+stats = show_layer_stats(model)
+wandb.log(stats)
+wandb.finish()

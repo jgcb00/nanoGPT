@@ -10,6 +10,7 @@ import glob
 import time
 import json
 import pickle
+from contextlib import nullcontext
 import wandb
 
 import math
@@ -19,7 +20,7 @@ import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.attention.flex_attention import create_block_mask
-from arch.utils import get_model, param_groups_mup
+from arch.utils import get_model, param_groups_mup, StatCapture
 from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 from arch.optim.get_optimizer import get_optimizers
@@ -133,7 +134,10 @@ raw_model = model.module # always contains the "raw" unwrapped model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 # init the optimizer(s)
 if nconfig.use_uscaling:
-    param_list = param_groups_mup(model, base_lr=nconfig.learning_rate, wd=nconfig.weight_decay)
+    param_list = param_groups_mup(model,
+                                  base_lr_hidden=nconfig.learning_rate,
+                                  base_lr_other=nconfig.uscaling_lr_other if nconfig.uscaling_lr_other > 0 else nconfig.learning_rate,
+                                  wd=nconfig.weight_decay)
 else:
     param_list = None
 optimizers = get_optimizers(model, nconfig, raw_model, param_list=param_list)
@@ -226,12 +230,18 @@ for step in range(nconfig.num_iterations + 1):
         break
 
     # --------------- TRAINING SECTION -----------------
+    capture_now = (step % nconfig.inspect_every == 0) and master_process
     if nconfig.optim == 'splus':
         optimizers[0].train()
     model.train()
     for i in range(1, train_accumulation_steps+1):
+        # setup hook context
+        hook_ctx = (
+            StatCapture(model)
+            if (capture_now and i == train_accumulation_steps) else nullcontext()
+        )
         # forward pass
-        with ctx:
+        with ctx, hook_ctx as sc:
             loss = model(x, targets=y)
             train_loss = loss.detach()
         # advance the dataset for the next batch
@@ -250,23 +260,16 @@ for step in range(nconfig.num_iterations + 1):
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
         sched.step()
+    # log the stats, if any
+    if capture_now:
+        stats = sc.collect()
+        wandb.log(stats, step=step)
     # null the gradients
     model.zero_grad(set_to_none=True)
     if nconfig.optim == 'splus':
         optimizers[0].zero_grad()
     # --------------- TRAINING SECTION END -------------------
     # everything that follows now is just diagnostics, prints, logging, etc.
-
-    RMS_LOG_EVERY = 250
-    if master_process and (step % RMS_LOG_EVERY == 0 or last_step):
-        with torch.no_grad():
-            rms_dict = {}
-            for name, param in raw_model.named_parameters():
-                if param.requires_grad:
-                    rms = torch.sqrt(torch.mean(param.data.float() ** 2)).item()
-                    rms_dict[f"weights_rms/{name}"] = rms
-        if rms_dict:
-            wandb.log(rms_dict, step=step)
 
     #dist.all_reduce(train_loss, op=dist.ReduceOp.AVG) # all-reducing the training loss would be more correct in terms of logging, but slower
     approx_time = training_time_ms + 1000 * (time.time() - t0)

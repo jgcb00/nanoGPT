@@ -1,19 +1,15 @@
 #!/bin/bash
-##SBATCH --nodes=4
-##SBATCH --ntasks-per-node=1
-##SBATCH --cpus-per-task=32
-##SBATCH --gres=gpu:4
-##SBATCH --time=24:00:00
-##SBATCH --error=logs/experiment14_dragon3B_uscaling.err
-##SBATCH --output=logs/experiment14_dragon3B_uscaling.out
-##SBATCH --account=BOOST_LCustodi
-##SBATCH --partition=boost_usr_prod
 ##SBATCH --nodes=1
-##SBATCH --gres=gpu:1
-##SBATCH --time=00:30:00
-##SBATCH --qos=boost_qos_dbg
+##SBATCH --ntasks-per-node=1
+##SBATCH --gres=gpu:4
+##SBATCH --time=08:00:00
+##SBATCH --error=logs/exp14u_w512_4e-1.err
+##SBATCH --output=logs/exp14u_w512_4e-1.out
+##SBATCH --account=jureap140
+##SBATCH --partition=jureap
+##SBATCH --nodelist=jpbo-009-[01-48]
 
-# uncomment sbatch directives, distributed args, srun, gpu_per_node to 4, val loss every to 250, log wandb, input bin, nodes, time
+# sbatch directives, srun, gpu per node, distributed args
 
 #module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
 #source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/activate
@@ -22,6 +18,7 @@ module load GCC && module load Python/3.12.3 && module load NVHPC && module load
 source /p/project1/jureap140/jupiter_env/bin/activate
 export TRITON_HOME="/p/project1/jureap140/temp"
 export WANDB_CACHE_DIR="/p/project1/jureap140/temp"
+export CUDA_DEVICE_MAX_CONNECTIONS=1
 
 export WANDB_MODE=offline
 
@@ -49,10 +46,12 @@ DISTRIBUTED_ARGS=(
 # +layer-norm scaling
 # +diff-attention
 
-# --run_name exp14_Dragon-L-GDN-uscaling-adamw \
+# d_model=512, n_heads=8, n_kv_heads=4, device_bs=8
+# d_model=1024, n_heads=16, n_kv_heads=8, device_bs=4
+# d_model=2048, n_heads=32, n_kv_heads=16, device_bs=2
 
-torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name test_uscaling_9juil_lr6e-2 \
+torchrun_jsc ${DISTRIBUTED_ARGS[@]} main.py \
+    --run_name test_uscaling_w512_lrH6e-1_lrO3e-2 \
     --no-fused_loss_computation \
     --use_uscaling \
     --uscaling_tau 0.2 \
@@ -69,9 +68,9 @@ torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --slw_warmup_iters 0.6 \
     --rope_theta_local 163 \
     --model dragon \
-    --d_model 1280 \
-    --n_heads 20 \
-    --n_kv_heads 10 \
+    --d_model 512 \
+    --n_heads 8 \
+    --n_kv_heads 4 \
     --n_layers 20 \
     --use_kv_sharing \
     --use_swa \
@@ -83,26 +82,23 @@ torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --layer-norm-scaling \
     --scalable_softmax \
     --optim adamw \
-    --batch_size 16 \
-    --device_batch_size 4 \
-    --learning_rate 6e-2 \
-    --num_iterations 13197 \
-    --warmup_iters 0.0045 \
+    --batch_size 32 \
+    --device_batch_size 8 \
+    --learning_rate 6e-1 \
+    --uscaling_lr_other 3e-2 \
+    --num_iterations 6600 \
+    --warmup_iters 0.05 \
     --warmdown_iters 0.15 \
-    --weight_decay 0.1 \
+    --weight_decay 0.003 \
     --sequence_length 4736 \
     --vocab_size 50304 \
     --input_bin '/p/project1/jureap140/uscaling_tests/nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
     --input_val_bin '/p/project1/jureap140/uscaling_tests/nanoGPT/data/fineweb100B/fineweb_val_*.bin' \
     --val_loss_every 250 \
     --val_tokens 10002432 \
+    --inspect_every 500 \
     --save_every 10000 \
     --eval_benchmarks_tasks 'hellaswag,swde,fda' \
     --eval_benchmarks \
     --no-evalpg19 \
     --log_wandb
-
-# 0.256
-
-#--input_bin '../../nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
-#--input_val_bin '../../nanoGPT/data/fineweb100B/fineweb_val_*.bin' \

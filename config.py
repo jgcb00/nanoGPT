@@ -92,6 +92,7 @@ class NanoConfig:
     grad_norm_clip : float = 1.0
     scheduler : str = "wsd" # linear-slow or moonlight
     use_uscaling: bool = False
+    uscaling_lr_other: float = 0
     init_std : float = 0.006 # initialization std for weights
 
     # data
@@ -106,6 +107,7 @@ class NanoConfig:
     # evaluation and logging
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
     val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
+    inspect_every: int = 0 # every how many steps to inspect the model? 0 for never
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     log_wandb : bool = False # whether to log to wandb
 
