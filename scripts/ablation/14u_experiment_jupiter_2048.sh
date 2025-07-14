@@ -1,24 +1,27 @@
 #!/bin/bash
-#SBATCH --nodes=1
+#SBATCH --nodes=8
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:4
-#SBATCH --time=08:00:00
-#SBATCH --error=logs/exp14u_w2048_6e-2.err
-#SBATCH --output=logs/exp14u_w2048_6e-2.out
-#SBATCH --account=jureap140
-#SBATCH --partition=jureap
-#SBATCH --nodelist=jpbo-009-[01-48]
+#SBATCH --time=24:00:00
+#SBATCH --job-name=w2048_lr3p9E-3
+#SBATCH --error=logs/exp14u_w2048_LR3p9E-3.err
+#SBATCH --output=logs/exp14u_w2048_LR3p9E-3.out
+#SBATCH --account=BOOST_LCustodi
+#SBATCH --partition=boost_usr_prod
+##SBATCH --account=jureap140
+##SBATCH --partition=jureap
+##SBATCH --nodelist=jpbo-009-[01-48]
 
-# uncomment sbatch directives, distributed args
+# uncomment sbatch directives, distributed args, srun
 
-#module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
-#source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/activate
+module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
+source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/activate
 
-module load GCC && module load Python/3.12.3 && module load NVHPC && module load cuDNN/9.5.0.50-CUDA-12
-source /p/project1/jureap140/jupiter_env/bin/activate
-export TRITON_HOME="/p/project1/jureap140/temp"
-export WANDB_CACHE_DIR="/p/project1/jureap140/temp"
-export CUDA_DEVICE_MAX_CONNECTIONS=1
+#module load GCC && module load Python/3.12.3 && module load NVHPC && module load cuDNN/9.5.0.50-CUDA-12
+#source /p/project1/jureap140/jupiter_env/bin/activate
+#export TRITON_HOME="/p/project1/jureap140/temp"
+#export WANDB_CACHE_DIR="/p/project1/jureap140/temp"
+#export CUDA_DEVICE_MAX_CONNECTIONS=1
 
 export WANDB_MODE=offline
 
@@ -50,8 +53,8 @@ DISTRIBUTED_ARGS=(
 # d_model=1024, n_heads=16, n_kv_heads=8, device_bs=4
 # d_model=2048, n_heads=32, n_kv_heads=16, device_bs=2
 
-srun torchrun_jsc ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name test_uscaling_w2048_lr6e-2 \
+srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
+    --run_name test_uscaling_w2048_LR3.9E-3 \
     --no-fused_loss_computation \
     --use_uscaling \
     --uscaling_tau 0.2 \
@@ -82,18 +85,18 @@ srun torchrun_jsc ${DISTRIBUTED_ARGS[@]} main.py \
     --layer-norm-scaling \
     --scalable_softmax \
     --optim adamw \
-    --batch_size 32 \
-    --device_batch_size 2 \
-    --learning_rate 6e-2 \
-    --uscaling_lr_other 3e-2 \
-    --num_iterations 6600 \
-    --warmup_iters 0.05 \
+    --batch_size 64 \
+    --device_batch_size 1 \
+    --learning_rate 3.9e-3 \
+    --uscaling_lr_other 3e-3 \
+    --num_iterations 32990 \
+    --warmup_iters 0.0045 \
     --warmdown_iters 0.15 \
-    --weight_decay 0.1 \
+    --weight_decay 1e-4 \
     --sequence_length 4736 \
     --vocab_size 50304 \
-    --input_bin '/p/project1/jureap140/uscaling_tests/nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
-    --input_val_bin '/p/project1/jureap140/uscaling_tests/nanoGPT/data/fineweb100B/fineweb_val_*.bin' \
+    --input_bin '../../nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
+    --input_val_bin '../../nanoGPT/data/fineweb100B/fineweb_val_*.bin' \
     --val_loss_every 250 \
     --val_tokens 10002432 \
     --inspect_every 500 \
