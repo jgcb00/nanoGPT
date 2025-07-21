@@ -3,9 +3,9 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
-#SBATCH --job-name=w1024_lr1E-0
-#SBATCH --error=logs/exp14u_w1024_LR1E-0.err
-#SBATCH --output=logs/exp14u_w1024_LR1E-0.out
+#SBATCH --job-name=w1024_SP_lr1e-3
+#SBATCH --error=logs/exp14u_w1024_LR1.307E-3.err
+#SBATCH --output=logs/exp14u_w1024_LR1.307E-3.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
 ##SBATCH --account=jureap140
@@ -14,7 +14,7 @@
 
 # uncomment sbatch directives, distributed args, srun
 
-module load gcc/12.2.0 python/3.11.6--gcc--8.5.0 cuda/12.1 cudnn cutensor/1.5.0.3--gcc--12.2.0-cuda-12.1
+module load gcc/12.2.0 python/3.11.7 cuda/12.2 cudnn cutensor/1.5.0.3--gcc--12.2.0 nccl/2.22.3-1--gcc--12.2.0-cuda-12.2-spack0.22
 source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/activate
 
 #module load GCC && module load Python/3.12.3 && module load NVHPC && module load cuDNN/9.5.0.50-CUDA-12
@@ -54,7 +54,7 @@ DISTRIBUTED_ARGS=(
 # d_model=2048, n_heads=32, n_kv_heads=16, device_bs=2
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name test_uscaling_w1024_LR1E-0 \
+    --run_name test_uscaling_w1024_LR1.307E-3 \
     --no-fused_loss_computation \
     --use_uscaling \
     --uscaling_tau 0.2 \
@@ -87,12 +87,12 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --optim adamw \
     --batch_size 64 \
     --device_batch_size 2 \
-    --learning_rate 1e-0 \
-    --uscaling_lr_other 3e-3 \
+    --learning_rate 1.307e-3 \
+    --uscaling_lr_other 1.307e-3 \
     --num_iterations 32990 \
     --warmup_iters 0.0045 \
     --warmdown_iters 0.15 \
-    --weight_decay 1e-4 \
+    --weight_decay 1.307e-4 \
     --sequence_length 4736 \
     --vocab_size 50304 \
     --input_bin '../../nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
@@ -105,3 +105,7 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --eval_benchmarks \
     --no-evalpg19 \
     --log_wandb
+
+#--use_uscaling \
+#--uscaling_tau 0.2 \
+#--init_std 1. \

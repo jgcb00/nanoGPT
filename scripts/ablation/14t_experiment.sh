@@ -40,6 +40,10 @@ DISTRIBUTED_ARGS=(
 
 torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --run_name exp14long_Dragon-L-GDN-softcap_diff_50-adamw \
+    --no-fused_loss_computation \
+    --use_uscaling \
+    --uscaling_tau 0.2 \
+    --init_std 1. \
     --softcap_global_attn 50.0 \
     --no-input_norm \
     --no-full_lambdas \

@@ -230,7 +230,7 @@ for step in range(nconfig.num_iterations + 1):
         break
 
     # --------------- TRAINING SECTION -----------------
-    capture_now = (step % nconfig.inspect_every == 0) and master_process
+    capture_now = nconfig.inspect_every > 0 and (step % nconfig.inspect_every == 0) and master_process
     if nconfig.optim == 'splus':
         optimizers[0].train()
     model.train()
