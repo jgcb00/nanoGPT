@@ -42,6 +42,7 @@ class MixerGatedDeltaNet(nn.Module):
         self.conv_init = conv_init
 
         self.n_heads = config.n_heads
+        self.n_heads_local = self.n_heads//1
         self.d_head = int(self.d_model * (self.expand_factor/2)) // self.n_heads
 
         self.key_dim = self.n_heads * self.d_head
@@ -50,29 +51,11 @@ class MixerGatedDeltaNet(nn.Module):
         self.head_v_dim = self.d_head * self.expand_v
         self.silu = nn.SiLU()
 
-        self.n_heads_local = self.n_heads // 1
-
-        in_proj_dim = (
-            self.key_dim +  # q_proj
-            self.key_dim +  # k_proj
-            self.value_dim +  # v_proj
-            self.n_heads +  # b_proj
-            self.n_heads  # a_proj
-        )
-
-        self.q_slice = slice(0, self.key_dim)
-        self.k_slice = slice(self.key_dim, 2 * self.key_dim)
-        self.v_slice = slice(2 * self.key_dim, 2 * self.key_dim + self.value_dim)
-        self.b_slice = slice(
-            2 * self.key_dim + self.value_dim,
-            2 * self.key_dim + self.value_dim + self.n_heads,
-        )
-        self.a_slice = slice(
-            2 * self.key_dim + self.value_dim + self.n_heads,
-            2 * self.key_dim + self.value_dim + 2 * self.n_heads,
-        )
-
-        self.in_proj = nn.Linear(self.d_model, in_proj_dim, bias=False)
+        self.dk = self.head_k_dim
+        self.dv = self.head_v_dim
+        self.per_head_proj = 2*self.dk + self.dv + 2 # [q k v b a] per head
+        in_proj_dim_global = self.n_heads * self.per_head_proj
+        self.in_proj = nn.Linear(self.d_model, in_proj_dim_global, bias=False)
 
         # hard coded for now todo
         dt_min = 0.001
@@ -189,16 +172,23 @@ class MixerGatedDeltaNet(nn.Module):
         if self.training:
             assert mode == 'chunk', "Only chunk mode is supported in training."
 
-        qkvba = self.in_proj(hidden_states) # (b, l, D)
-
+        # input projection (TP-aware)
+        qkvba = self.in_proj(hidden_states) # (l, b, H_local * per_head_proj)
         self.tracker.update('lin_attn_qkvba_l2', qkvba.norm(dim=-1))
-        
-        # split proj into q, k, v, b, a
-        q_proj = qkvba[:, :, self.q_slice]
-        k_proj = qkvba[:, :, self.k_slice]
-        v_proj = qkvba[:, :, self.v_slice]
-        b_proj = qkvba[:, :, self.b_slice]
-        a_proj = qkvba[:, :, self.a_slice]
+        # [L,B,(H*P)] -> [B,L,H,P]
+        qkvba = rearrange(qkvba, "b l (h p) -> b l h p", h=self.n_heads_local).contiguous()
+        # split per head: [B,L,H,dk/dk/dv/1/1]
+        q_proj = qkvba[..., 0:self.dk]
+        k_proj = qkvba[..., self.dk:2*self.dk]
+        v_proj = qkvba[..., 2*self.dk:2*self.dk+self.dv]
+        b_proj = qkvba[..., 2*self.dk+self.dv:2*self.dk+self.dv+1]
+        a_proj = qkvba[..., 2*self.dk+self.dv+1:]  
+        # concat for conv
+        q_proj = rearrange(q_proj, "b l h d -> b l (h d)")
+        k_proj = rearrange(k_proj, "b l h d -> b l (h d)")
+        v_proj = rearrange(v_proj, "b l h d -> b l (h d)")
+        b_proj = rearrange(b_proj, "b l h d -> b l (h d)") # d=1
+        a_proj = rearrange(a_proj, "b l h d -> b l (h d)")
 
         h_cache, q_conv_cache, k_conv_cache, v_conv_cache = None, None, None, None
         if cache is not None:
@@ -219,9 +209,14 @@ class MixerGatedDeltaNet(nn.Module):
                              cache=v_conv_cache,
                              output_final_state=(cache is not None),
                              seq_idx=None)
+
+        # back to per-head for kernels
+        q = rearrange(q, "b l (h d) -> b l h d", d=self.dk)
+        k = rearrange(k, "b l (h d) -> b l h d", d=self.dk)
+        v = rearrange(v, "b l (h d) -> b l h d", d=self.dv)
         
-        q, k = map(lambda x: rearrange(x, 'b t (h d) -> b t h d', d=self.head_k_dim), (q, k))
-        v = rearrange(v, 'b t (h d) -> b t h d', d=self.head_v_dim)
+        #q, k = map(lambda x: rearrange(x, 'b t (h d) -> b t h d', d=self.head_k_dim), (q, k))
+        #v = rearrange(v, 'b t (h d) -> b t h d', d=self.head_v_dim)
         beta = b_proj.sigmoid()
         g = -self.A_log.float().exp() * F.softplus(a_proj.float() + self.dt_bias)
 
