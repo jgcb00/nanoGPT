@@ -78,7 +78,6 @@ class Block(nn.Module):
         self.tracker = StatsCollector(config)
 
     def forward(self, x, cache=None):
-        return x
         external_kv = None
         if self.kv_source is not None:
             external_kv = self.kv_source.attn.get_kv()
@@ -92,15 +91,15 @@ class Block(nn.Module):
         
         # MIXER.
         y_attn,     attn_cache     = self.attn(hidden, external_kv=external_kv, cache=attn_cache) # (B, L, E*D)
-        #y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache) # (B, L, E*D)
+        y_lin_attn, lin_attn_cache = self.lin_attn(hidden, cache=lin_attn_cache) # (B, L, E*D)
         if self.config.groupnorm:
             y_attn = self.attn_group_norm(y_attn)
-            #y_lin_attn = self.lin_attn_group_norm(y_lin_attn)
+            y_lin_attn = self.lin_attn_group_norm(y_lin_attn)
         y_attn = y_attn.view(y_attn.size(0), y_attn.size(1), -1)
-        #y_lin_attn = y_lin_attn.view(y_lin_attn.size(0), y_lin_attn.size(1), -1)
+        y_lin_attn = y_lin_attn.view(y_lin_attn.size(0), y_lin_attn.size(1), -1)
 
-        y_mixer = self.out_proj((y_attn + y_attn) / 2)
-        #x = x + y_mixer
+        y_mixer = self.out_proj((y_attn + y_lin_attn) / 2)
+        x = x + y_mixer
         self.tracker.update('mixer_proj_l2', y_mixer.norm(dim=-1))
 
         # MLP.
