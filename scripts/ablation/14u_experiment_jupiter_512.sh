@@ -3,9 +3,9 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
-#SBATCH --job-name=w512_lr1p5
-#SBATCH --error=logs/exp14u_w512_LR1.5.err
-#SBATCH --output=logs/exp14u_w512_LR1.5.out
+#SBATCH --job-name=w512
+#SBATCH --error=logs/exp14u_w512_%j.err
+#SBATCH --output=logs/exp14u_w512_%j.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
 ##SBATCH --account=jureap140
@@ -54,10 +54,11 @@ DISTRIBUTED_ARGS=(
 # d_model=2048, n_heads=32, n_kv_heads=16, device_bs=2
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name test_uscaling_w512_LR1.5 \
+    --run_name test_uscaling_completep_w512_LRh1_LRs2p-8_LRe2p-4_LRhead2p-6 \
     --no-fused_loss_computation \
     --use_uscaling \
     --uscaling_tau 0.2 \
+    --uscaling_dt_mul 1.0 \
     --init_std 1. \
     --softcap_global_attn 50.0 \
     --no-input_norm \
@@ -87,9 +88,11 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --optim adamw \
     --batch_size 64 \
     --device_batch_size 4 \
-    --learning_rate 1.5 \
+    --learning_rate 1.0 \
     --weight_decay 1e-4 \
-    --uscaling_lr_other 3e-3 \
+    --uscaling_lr_scalar 3.91e-3 \
+    --uscaling_lr_embed 6.25e-2 \
+    --uscaling_lr_head 1.56e-2 \
     --num_iterations 32990 \
     --warmup_iters 0.0045 \
     --warmdown_iters 0.15 \
@@ -100,8 +103,12 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --val_loss_every 250 \
     --val_tokens 10002432 \
     --inspect_every 500 \
-    --save_every 10000 \
+    --save_every 1000 \
     --eval_benchmarks_tasks 'hellaswag,swde,fda' \
     --eval_benchmarks \
     --no-evalpg19 \
     --log_wandb
+
+# 2p-4 : 6.25e-2
+# 2p-6 : 1.56e-2
+# 2p-8 : 3.91e-3

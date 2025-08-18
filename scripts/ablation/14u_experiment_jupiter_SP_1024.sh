@@ -1,13 +1,15 @@
 #!/bin/bash
-#SBATCH --nodes=4
+#SBATCH --nodes=8
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
 #SBATCH --job-name=SP_w1024
-#SBATCH --error=logs/exp14u_SP_w1024_LR1.307E-3.err
-#SBATCH --output=logs/exp14u_SP_w1024_LR1.307E-3.out
+#SBATCH --error=logs/exp14u_SP_w1024_bis.err
+#SBATCH --output=logs/exp14u_SP_w1024_bis.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
+##SBATCH --time=00:30:00
+##SBATCH --qos=boost_qos_dbg
 ##SBATCH --account=jureap140
 ##SBATCH --partition=jureap
 ##SBATCH --nodelist=jpbo-009-[01-48]

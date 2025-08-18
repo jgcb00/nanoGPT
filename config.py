@@ -40,6 +40,7 @@ class NanoConfig:
     full_lambdas: bool = False # (n_heads, d_head) if full_lambdas=True, (n_heads,) if False (MG compatibility)
     fused_loss_computation : bool = True # whether to use fused linear + cross entropy loss
     uscaling_tau: float = 0.2
+    uscaling_dt_mul: float = 1.0
 
     # Attention related
     n_kv_heads : int = 0
@@ -92,7 +93,9 @@ class NanoConfig:
     grad_norm_clip : float = 1.0
     scheduler : str = "wsd" # linear-slow or moonlight
     use_uscaling: bool = False
-    uscaling_lr_other: float = 0
+    uscaling_lr_scalar: float = 0
+    uscaling_lr_embed: float = 0
+    uscaling_lr_head: float = 0
     init_std : float = 0.006 # initialization std for weights
 
     # data

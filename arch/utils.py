@@ -80,7 +80,7 @@ def get_model(nconfig):
             raise ValueError(f"Model {nconfig.model} not supported")
     return model
 
-def param_groups_mup(model, base_lr_hidden, base_lr_other, wd):
+def param_groups_mup(model, base_lr_hidden, base_lr_scalar, base_lr_embed, base_lr_head, wd):
     groups, seen = [], set()
     id2name = {id(p): n for n, p in model.named_parameters()}
 
@@ -90,7 +90,7 @@ def param_groups_mup(model, base_lr_hidden, base_lr_other, wd):
             fan_in = mod.weight.shape[1]
             scale = 1 / math.sqrt(fan_in)
             if "lm_head" in pname:
-                lr_scaled = base_lr_other
+                lr_scaled = base_lr_head
             else:
                 lr_scaled = base_lr_hidden * scale
 
@@ -110,14 +110,56 @@ def param_groups_mup(model, base_lr_hidden, base_lr_other, wd):
         if pname == "module._orig_mod.transformer.wte.weight":
             fan_out = p.shape[1] # nn.Embedding is transposed
             #lr_scaled = base_lr / math.sqrt(fan_out) # u-muP
-            lr_scaled = base_lr_other
+            lr_scaled = base_lr_embed
         else:
-            lr_scaled = base_lr_other
+            lr_scaled = base_lr_scalar
 
         #print(f"  {pname} | shape={tuple(p.shape)} | lr={lr_scaled:.3e}")
         groups.append({"params": [p], "lr": lr_scaled, "weight_decay": 0.})
 
     return groups
+
+def param_groups_mup_muon(model, base_lr_hidden, base_lr_scalar, base_lr_embed, base_lr_head, wd):
+    groups_adamw, groups_muon, seen = [], [], set()
+    id2name = {id(p): n for n, p in model.named_parameters()}
+
+    for mod in model.modules():
+        if isinstance(mod, nn.Linear):
+            pname = id2name.get(id(mod.weight), "")
+            fan_in = mod.weight.shape[1]
+            scale = 1 / math.sqrt(fan_in)
+            if "lm_head" in pname:
+                lr_scaled = base_lr_head
+            else:
+                lr_scaled = base_lr_hidden * scale
+
+            #print(f"{pname} | shape={tuple(mod.weight.shape)} | lr={lr_scaled:.3e}")
+            if "lm_head" in pname:
+                groups_adamw.append({"params": [mod.weight], "lr": lr_scaled, "weight_decay": 0.}) # wd/lr_scaled
+            else:
+                groups_muon.append({"params": [mod.weight], "lr": lr_scaled, "weight_decay": wd/lr_scaled})
+            seen.add(mod.weight)
+
+            if mod.bias is not None:
+                groups_adamw.append({"params": [mod.bias], "lr": lr_scaled, "weight_decay": 0.})
+                seen.add(mod.bias)
+
+    for p in model.parameters():
+        if p in seen:
+            continue
+        pname = id2name.get(id(p), "<unnamed>")
+
+        if pname == "module._orig_mod.transformer.wte.weight":
+            fan_out = p.shape[1] # nn.Embedding is transposed
+            #lr_scaled = base_lr / math.sqrt(fan_out) # u-muP
+            lr_scaled = base_lr_embed
+        else:
+            lr_scaled = base_lr_scalar
+
+        #print(f"  {pname} | shape={tuple(p.shape)} | lr={lr_scaled:.3e}")
+        groups_adamw.append({"params": [p], "lr": lr_scaled, "weight_decay": 0.})
+
+    return (groups_adamw, groups_muon)
 
 class StatsCollector:
     def __init__(self, config: NanoConfig):

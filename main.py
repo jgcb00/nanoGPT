@@ -20,7 +20,7 @@ import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.attention.flex_attention import create_block_mask
-from arch.utils import get_model, param_groups_mup, StatCapture
+from arch.utils import get_model, param_groups_mup, param_groups_mup_muon, StatCapture
 from config import NanoConfig
 from arch.data.distributed_data_loader import DistributedDataLoader
 from arch.optim.get_optimizer import get_optimizers
@@ -134,10 +134,22 @@ raw_model = model.module # always contains the "raw" unwrapped model
 ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 # init the optimizer(s)
 if nconfig.use_uscaling:
-    param_list = param_groups_mup(model,
-                                  base_lr_hidden=nconfig.learning_rate,
-                                  base_lr_other=nconfig.uscaling_lr_other if nconfig.uscaling_lr_other > 0 else nconfig.learning_rate,
-                                  wd=nconfig.weight_decay)
+    if nconfig.optim == "adamw":
+        param_list = param_groups_mup(model,
+                                      base_lr_hidden=nconfig.learning_rate,
+                                      base_lr_scalar=nconfig.uscaling_lr_scalar if nconfig.uscaling_lr_scalar > 0 else nconfig.learning_rate,
+                                      base_lr_embed=nconfig.uscaling_lr_embed if nconfig.uscaling_lr_embed > 0 else nconfig.learning_rate,
+                                      base_lr_head=nconfig.uscaling_lr_head if nconfig.uscaling_lr_head > 0 else nconfig.learning_rate,
+                                      wd=nconfig.weight_decay)
+    elif nconfig.optim == "muon":
+        param_list = param_groups_mup_muon(model,
+                                           base_lr_hidden=nconfig.learning_rate,
+                                           base_lr_scalar=nconfig.uscaling_lr_scalar if nconfig.uscaling_lr_scalar > 0 else nconfig.learning_rate,
+                                           base_lr_embed=nconfig.uscaling_lr_embed if nconfig.uscaling_lr_embed > 0 else nconfig.learning_rate,
+                                           base_lr_head=nconfig.uscaling_lr_head if nconfig.uscaling_lr_head > 0 else nconfig.learning_rate,
+                                           wd=nconfig.weight_decay)
+    else:
+        raise ValueError(f"Unknown optimizer: {nconfig.optim}. Please use 'adamw' or 'muon' with uscaling.")
 else:
     param_list = None
 optimizers = get_optimizers(model, nconfig, raw_model, param_list=param_list)
@@ -230,18 +242,20 @@ for step in range(nconfig.num_iterations + 1):
         break
 
     # --------------- TRAINING SECTION -----------------
-    capture_now = nconfig.inspect_every > 0 and (step % nconfig.inspect_every == 0) and master_process
+    #capture_now = nconfig.inspect_every > 0 and (step % nconfig.inspect_every == 0) and master_process
+    #nan_found = False
     if nconfig.optim == 'splus':
         optimizers[0].train()
     model.train()
     for i in range(1, train_accumulation_steps+1):
         # setup hook context
-        hook_ctx = (
-            StatCapture(model)
-            if (capture_now and i == train_accumulation_steps) else nullcontext()
-        )
+        #hook_ctx = (
+        #    StatCapture(model)
+        #    if (capture_now and i == train_accumulation_steps) else nullcontext()
+        #)
         # forward pass
-        with ctx, hook_ctx as sc:
+        #with ctx, hook_ctx as sc:
+        with ctx:
             loss = model(x, targets=y)
             train_loss = loss.detach()
         # advance the dataset for the next batch
@@ -261,9 +275,9 @@ for step in range(nconfig.num_iterations + 1):
         opt.step()
         sched.step()
     # log the stats, if any
-    if capture_now:
+    """if capture_now:
         stats = sc.collect()
-        wandb.log(stats, step=step)
+        wandb.log(stats, step=step)"""
     # null the gradients
     model.zero_grad(set_to_none=True)
     if nconfig.optim == 'splus':

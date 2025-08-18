@@ -197,7 +197,7 @@ class MixerGatedDeltaNet(nn.Module):
         q, k = map(lambda x: rearrange(x, 'b t (h d) -> b t h d', d=self.head_k_dim), (q, k))
         v = rearrange(v, 'b t (h d) -> b t h d', d=self.head_v_dim)
         beta = b_proj.sigmoid()
-        g = -self.A_log.float().exp() * F.softplus(a_proj.float() + self.dt_bias)
+        g = -self.A_log.float().exp() * self.config.uscaling_dt_mul * F.softplus(a_proj.float() + self.dt_bias)
 
         if mode == 'chunk':
             o, h_cache = chunk_gated_delta_rule(

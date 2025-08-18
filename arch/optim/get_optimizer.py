@@ -17,12 +17,14 @@ def get_optimizers(model, nconfig: NanoConfig, raw_model, param_list=None):
         case 'muon':
             from torch.optim import AdamW
             from arch.optim.muon import Muon
-            optimizer1 = AdamW([raw_model.transformer.wte.weight], lr=nconfig.learning_rate, betas=(0.9, 0.95), fused=True)
-            optimizer2 = AdamW([raw_model.lm_head.weight], lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True)
-            optimizer3 = create_2D_filtered_optimizer(Muon, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, momentum=0.95, weight_decay=nconfig.weight_decay)
-            optimizers = [optimizer1, optimizer2, optimizer3]
-            if optimizer4 := create_filtered_optimizer(AdamW, raw_model.transformer.h.parameters(), lr=nconfig.learning_rate, betas=(0.9, 0.95), weight_decay=nconfig.weight_decay, fused=True):
-                optimizers.append(optimizer4)
+            if param_list is None:
+                raise ValueError("Muon optimizer requires param_list to be provided.")
+            else:
+                param_list_adamw = param_list[0]
+                param_list_muon = param_list[1]
+                optimizer1 = AdamW(param_list_adamw, betas=(0.9, 0.95), fused=True)
+                optimizer2 = Muon(param_list_muon, momentum=0.95)
+                optimizers = [optimizer1, optimizer2]
         case 'muon_moonlight':
             from arch.optim.moonlight_muon import Muon
 

@@ -1,20 +1,18 @@
 #!/bin/bash
-#SBATCH --nodes=8
+#SBATCH --nodes=4
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
-#SBATCH --job-name=SP_w2048
-#SBATCH --error=logs/exp14u_SP_w2048_bis.err
-#SBATCH --output=logs/exp14u_SP_w2048_bis.out
+#SBATCH --job-name=w256
+#SBATCH --error=logs/exp14u_w256_%j.err
+#SBATCH --output=logs/exp14u_w256_%j.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
-##SBATCH --time=00:30:00
-##SBATCH --qos=boost_qos_dbg
 ##SBATCH --account=jureap140
 ##SBATCH --partition=jureap
 ##SBATCH --nodelist=jpbo-009-[01-48]
 
-# uncomment sbatch directives, distributed args, srun
+# uncomment sbatch directives, distributed args, srun, number of gpus per node
 
 module load gcc/12.2.0 python/3.11.7 cuda/12.2 cudnn cutensor/1.5.0.3--gcc--12.2.0 nccl/2.22.3-1--gcc--12.2.0-cuda-12.2-spack0.22
 source /leonardo_work/BOOST_LCustodi/script/training/torch2.5_training_env/bin/activate
@@ -56,7 +54,11 @@ DISTRIBUTED_ARGS=(
 # d_model=2048, n_heads=32, n_kv_heads=16, device_bs=2
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name test_uscaling_SP_w1920_LR6.330E-4 \
+    --run_name test_uscaling_completep_w256_LRh1_LRs2p-6_LRe2p-4_LRhead2p-8 \
+    --no-fused_loss_computation \
+    --use_uscaling \
+    --uscaling_tau 0.2 \
+    --init_std 1. \
     --softcap_global_attn 50.0 \
     --no-input_norm \
     --no-full_lambdas \
@@ -69,9 +71,9 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --slw_warmup_iters 0.6 \
     --rope_theta_local 163 \
     --model dragon \
-    --d_model 1920 \
-    --n_heads 32 \
-    --n_kv_heads 16 \
+    --d_model 256 \
+    --n_heads 4 \
+    --n_kv_heads 2 \
     --n_layers 20 \
     --use_kv_sharing \
     --use_swa \
@@ -84,9 +86,12 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --scalable_softmax \
     --optim adamw \
     --batch_size 64 \
-    --device_batch_size 1 \
-    --learning_rate 6.330e-4 \
-    --weight_decay 0.1 \
+    --device_batch_size 4 \
+    --learning_rate 1.0 \
+    --weight_decay 1e-4 \
+    --uscaling_lr_scalar 1.56e-2 \
+    --uscaling_lr_embed 6.25e-2 \
+    --uscaling_lr_head 3.91e-3 \
     --num_iterations 32990 \
     --warmup_iters 0.0045 \
     --warmdown_iters 0.15 \
@@ -97,8 +102,12 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --val_loss_every 250 \
     --val_tokens 10002432 \
     --inspect_every 500 \
-    --save_every 10000 \
+    --save_every 1000 \
     --eval_benchmarks_tasks 'hellaswag,swde,fda' \
     --eval_benchmarks \
     --no-evalpg19 \
     --log_wandb
+
+# 2p-4 : 6.25e-2
+# 2p-6 : 1.56e-2
+# 2p-8 : 3.91e-3
