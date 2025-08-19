@@ -91,11 +91,12 @@ def param_groups_mup(model, base_lr_hidden, base_lr_scalar, base_lr_embed, base_
             scale = 1 / math.sqrt(fan_in)
             if "lm_head" in pname:
                 lr_scaled = base_lr_head
+                wd_scaled = 0.0
             else:
                 lr_scaled = base_lr_hidden * scale
+                wd_scaled = wd / lr_scaled
 
-            #print(f"{pname} | shape={tuple(mod.weight.shape)} | lr={lr_scaled:.3e}")
-            groups.append({"params": [mod.weight], "lr": lr_scaled, "weight_decay": wd/lr_scaled})
+            groups.append({"params": [mod.weight], "lr": lr_scaled, "weight_decay": wd_scaled})
             seen.add(mod.weight)
 
             if mod.bias is not None:
@@ -114,7 +115,6 @@ def param_groups_mup(model, base_lr_hidden, base_lr_scalar, base_lr_embed, base_
         else:
             lr_scaled = base_lr_scalar
 
-        #print(f"  {pname} | shape={tuple(p.shape)} | lr={lr_scaled:.3e}")
         groups.append({"params": [p], "lr": lr_scaled, "weight_decay": 0.})
 
     return groups

@@ -146,14 +146,6 @@ class MixerGatedDeltaNet(nn.Module):
             else:
                 raise ValueError(f"Unknown gate activation: {self.config.gate_act_gdn}")
 
-        self.apply(self._initialize_weights)
-
-    def _initialize_weights(self, module: nn.Module):
-        if isinstance(module, nn.Linear):
-            nn.init.xavier_uniform_(module.weight, gain=2 ** -2.5)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
-
     def forward(self, hidden_states, cache=None):
         """
         hidden_states: (b, l, d)
