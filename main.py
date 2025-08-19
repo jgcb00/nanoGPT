@@ -33,6 +33,9 @@ from arch.schedulers import get_schedulers
 nconfig = tyro.cli(NanoConfig)
 assert nconfig.run_name != "", "Please provide a run name for this training run."
 
+p_state_passing = nconfig.p_state_passing
+nconfig.p_state_passing = 0
+
 if nconfig.optim == "splus":
     torch.backends.cuda.preferred_linalg_library("magma")
 
@@ -193,6 +196,11 @@ for step in range(nconfig.num_iterations + 1):
         window = nconfig.slw_increment * math.ceil(window / nconfig.slw_increment) # quantize
         window = int(min(window, nconfig.sequence_length)) # cap
         nconfig.slw_window = window
+    
+    # update the state passing probability
+    if step == nconfig.step_state_passing and p_state_passing > 0:
+        nconfig.p_state_passing = p_state_passing
+        print0(f"Setting p_state_passing to {nconfig.p_state_passing} at step {step}.")
 
     # --------------- VALIDATION SECTION -----------------
     if (last_step or (nconfig.val_loss_every > 0 and step % nconfig.val_loss_every == 0)):

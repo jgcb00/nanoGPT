@@ -67,7 +67,9 @@ class NanoConfig:
 
     # GatedDeltaNet related
     use_gate: bool = True
-    expand_v : int = 2
+    expand_v: int = 2
+    p_state_passing: float = 0.0 # probability of state passing (0.0 = no state passing)
+    step_state_passing: int = 0 # step at which to start using the given p_state_passing (0 = start at the beginning of training)
 
     # LaCT related
     lact_chunk_size: int = 2048
