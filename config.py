@@ -19,7 +19,7 @@ class NanoConfig:
     attn_type : str = "normal" # normal, diff
     local_attn_type: str = "normal"
     lin_attn_type: str = "mamba2" # mamba2, gdn, lact
-    global_attn_repart: str = "hymba" # hymba (beginning,middle,end), middle (3 parts, global @middle of each part)
+    global_attn_repart: str = "hymba" # hymba (beginning,middle,end), middle (3 parts, global @middle of each part), megatron
     rope_theta_global: float = 10000.0
     rope_theta_local: float = 10000.0
     layer_norm_scaling: bool = False # whether to scale layer norm by sqrt(layer_depth)
@@ -108,10 +108,11 @@ class NanoConfig:
     patch_training_fraction: float = 0.67
     input_bin : str = 'data/fineweb10B/fineweb_train_*.bin' # input .bin to train on
     input_val_bin : str = 'data/fineweb10B/fineweb_val_*.bin' # input .bin to eval validation loss on
-    
+    input_data_type: str = "fineweb" # fineweb or MG
+
     # evaluation and logging
     val_loss_every : int = 125 # every how many steps to evaluate val loss? 0 for only at the end
-    val_tokens : int = 10485760 # how many tokens of validation data? it's important to keep this fixed for consistent comparisons
+    val_iterations: int = 50 # 1 step = global bs * T tokens
     inspect_every: int = 0 # every how many steps to inspect the model? 0 for never
     save_every : int = 0 # every how many steps to save the checkpoint? 0 for only at the end
     log_wandb : bool = False # whether to log to wandb

@@ -88,22 +88,23 @@ print0("="*100)
 
 if nconfig.use_patch_level_training:
     prev_device_batch_size = nconfig.device_batch_size
-    prev_train_accumulation_steps = nconfig.batch_size // (prev_device_batch_size * ddp_world_size)
-    nconfig.device_batch_size = min(nconfig.patch_size, prev_train_accumulation_steps) * prev_device_batch_size
+    prev_accumulation_steps = nconfig.batch_size // (prev_device_batch_size * ddp_world_size)
+    nconfig.device_batch_size = min(nconfig.patch_size, prev_accumulation_steps) * prev_device_batch_size
     print0(f"Using patch-level training. Modifying the device batch size to account for the patch size, from {prev_device_batch_size} to {nconfig.device_batch_size}.")
 
 # convenience variables
 B, T = nconfig.device_batch_size, nconfig.sequence_length
 # calculate the number of steps to take in the val loop.
-assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
-val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
+#assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
+#val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
+
 # calculate the steps of gradient accumulation required to attain the desired global batch size.
 assert nconfig.batch_size % (B * ddp_world_size) == 0
-train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
+accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
 
 # load tokens
-train_loader = DistributedDataLoader(nconfig.input_bin, B, T, ddp_rank, ddp_world_size)
-val_loader = DistributedDataLoader(nconfig.input_val_bin, B, T, ddp_rank, ddp_world_size)
+train_loader = DistributedDataLoader(nconfig.input_bin, B, T, ddp_rank, ddp_world_size, nconfig.input_data_type)
+val_loader = DistributedDataLoader(nconfig.input_val_bin, B, T, ddp_rank, ddp_world_size, nconfig.input_data_type)
 print0(f"Training DataLoader: total number of tokens: {train_loader.ntok_total} across {len(train_loader.files)} files")
 print0(f"Validation DataLoader: total number of tokens: {val_loader.ntok_total} across {len(val_loader.files)} files")
 x, y = train_loader.next_batch()
@@ -204,8 +205,8 @@ for step in range(nconfig.num_iterations + 1):
 
     # --------------- VALIDATION SECTION -----------------
     if (last_step or (nconfig.val_loss_every > 0 and step % nconfig.val_loss_every == 0)):
-        #if nconfig.optim == 'splus':
-        #    optimizers[0].eval()
+        if nconfig.optim == 'splus':
+            optimizers[0].eval()
 
         # stop the clock
         torch.cuda.synchronize()
@@ -214,15 +215,19 @@ for step in range(nconfig.num_iterations + 1):
         # run validation batches
         model.eval()
         val_loader.reset()
-        val_loss = 0.0
-        for _ in range(val_steps):
-            x_val, y_val = val_loader.next_batch()
-            with ctx: # of course, we'd like to use no_grad() here too, but that creates a torch.compile error for some reason
-                loss = model(x_val, targets=y_val)
-                val_loss += loss.detach()
+        local_sum = 0.
+        for _ in range(nconfig.val_iterations):
+            mb_sum = 0.
+            for _ in range(accumulation_steps):
+                x_val, y_val = val_loader.next_batch()
+                with ctx: # of course, we'd like to use no_grad() here too, but that creates a torch.compile error for some reason
+                    loss = model(x_val, targets=y_val)
+                mb_sum += loss.detach().item()
                 del loss
-        dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
-        val_loss /= val_steps
+            local_sum += mb_sum / accumulation_steps
+        val_loss_t = torch.tensor(local_sum / nconfig.val_iterations, device=device)
+        dist.all_reduce(val_loss_t, op=dist.ReduceOp.AVG)
+        val_loss = val_loss_t.item()
         # log val loss
         print0(f'step:{step}/{nconfig.num_iterations} val_loss:{val_loss:.4f} train_time:{training_time_ms:.0f}ms step_avg:{avg_step_time:.2f}ms')
         if master_process:
@@ -231,6 +236,7 @@ for step in range(nconfig.num_iterations + 1):
         torch.cuda.synchronize()
         t0 = time.time()
 
+    # --------------- SAVING SECTION -----------------
     if master_process and (last_step or (nconfig.save_every > 0 and step % nconfig.save_every == 0)):
         # stop the clock
         torch.cuda.synchronize()
@@ -255,11 +261,11 @@ for step in range(nconfig.num_iterations + 1):
     if nconfig.optim == 'splus':
         optimizers[0].train()
     model.train()
-    for i in range(1, train_accumulation_steps+1):
+    for i in range(1, accumulation_steps+1):
         # setup hook context
         #hook_ctx = (
         #    StatCapture(model)
-        #    if (capture_now and i == train_accumulation_steps) else nullcontext()
+        #    if (capture_now and i == accumulation_steps) else nullcontext()
         #)
         # forward pass
         #with ctx, hook_ctx as sc:
@@ -269,13 +275,13 @@ for step in range(nconfig.num_iterations + 1):
         # advance the dataset for the next batch
         x, y = train_loader.next_batch()
         # backward pass
-        if i < train_accumulation_steps:
+        if i < accumulation_steps:
             with model.no_sync(): # there's no need to sync gradients every accumulation step
                 loss.backward()
         else:
             loss.backward() # just sync on the last step
     for p in model.parameters():
-        p.grad /= train_accumulation_steps
+        p.grad /= accumulation_steps
     # clip those gradients
     grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=nconfig.grad_norm_clip, foreach=True)
     # step the optimizers and schedulers
@@ -316,10 +322,10 @@ for step in range(nconfig.num_iterations + 1):
         # fallback to the original device batch size
         nconfig.device_batch_size = prev_device_batch_size
         B, T = nconfig.device_batch_size, nconfig.sequence_length
-        assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
-        val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
+        #assert nconfig.val_tokens % (B * T * ddp_world_size) == 0
+        #val_steps = nconfig.val_tokens // (B * T * ddp_world_size)
         assert nconfig.batch_size % (B * ddp_world_size) == 0
-        train_accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
+        accumulation_steps = nconfig.batch_size // (B * ddp_world_size)
 
         # recompute current_position in the data loaders (we dont interrupt the stream of tokens this way)
         current_pos = train_loader.current_position - train_loader.process_rank * train_loader.B * T # same on each rank

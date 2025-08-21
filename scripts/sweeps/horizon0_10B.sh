@@ -1,13 +1,15 @@
 #!/bin/bash
-#SBATCH --nodes=4
+#SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:4
-#SBATCH --time=24:00:00
-#SBATCH --job-name=w256
-#SBATCH --error=logs/exp14u_w256_%j.err
-#SBATCH --output=logs/exp14u_w256_%j.out
+##SBATCH --time=24:00:00
+#SBATCH --job-name=h0_10B
+#SBATCH --error=logs/h0_10B_%j.err
+#SBATCH --output=logs/h0_10B_%j.out
 #SBATCH --account=BOOST_LCustodi
 #SBATCH --partition=boost_usr_prod
+#SBATCH --time=00:30:00
+#SBATCH --qos=boost_qos_dbg
 ##SBATCH --account=jureap140
 ##SBATCH --partition=jureap
 ##SBATCH --nodelist=jpbo-009-[01-48]
@@ -54,12 +56,14 @@ DISTRIBUTED_ARGS=(
 # d_model=2048, n_heads=32, n_kv_heads=16, device_bs=2
 
 srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
-    --run_name test_uscaling_completep_w256_LRh1_LRs2p-6_LRe2p-4_LRhead2p-8 \
+    --run_name sweep_h0_10B_LRh1_LRs2p-6_LRe2p-4_LRhead2p-6 \
     --no-fused_loss_computation \
     --use_uscaling \
     --uscaling_tau 0.2 \
-    --init_std 1. \
-    --softcap_global_attn 50.0 \
+    --uscaling_dt_mul 1.0 \
+    --init_std 1.0 \
+    --softcap_local_attn 0.0 \
+    --softcap_global_attn 150.0 \
     --no-input_norm \
     --no-full_lambdas \
     --eps_rmsnorm 1.0e-6 \
@@ -71,40 +75,39 @@ srun torchrun ${DISTRIBUTED_ARGS[@]} main.py \
     --slw_warmup_iters 0.6 \
     --rope_theta_local 163 \
     --model dragon \
-    --d_model 256 \
-    --n_heads 4 \
-    --n_kv_heads 2 \
-    --n_layers 20 \
+    --d_model 512 \
+    --n_heads 8 \
+    --n_kv_heads 4 \
+    --n_layers 36 \
+    --n_global_layers 4 \
+    --global_attn_repart megatron \
+    --attn_type diff \
+    --lin_attn_type gdn \
+    --expand_factor 2 \
     --use_kv_sharing \
     --use_swa \
     --qk-norm \
-    --attn_type diff \
-    --lin_attn_type gdn \
-    --global_attn_repart middle \
-    --expand_factor 2 \
     --layer-norm-scaling \
     --scalable_softmax \
     --optim adamw \
-    --batch_size 64 \
-    --device_batch_size 4 \
+    --batch_size 1200 \
+    --device_batch_size 2 \
     --learning_rate 1.0 \
     --weight_decay 1e-4 \
     --uscaling_lr_scalar 1.56e-2 \
     --uscaling_lr_embed 6.25e-2 \
-    --uscaling_lr_head 3.91e-3 \
-    --num_iterations 32990 \
-    --warmup_iters 0.0045 \
+    --uscaling_lr_head 1.56e-2 \
+    --num_iterations 1038 \
+    --warmup_iters 0.05 \
     --warmdown_iters 0.15 \
-    --sequence_length 4736 \
+    --sequence_length 8192 \
     --vocab_size 50304 \
     --input_bin '../../nanoGPT/data/fineweb100B/fineweb_train_*.bin' \
     --input_val_bin '../../nanoGPT/data/fineweb100B/fineweb_val_*.bin' \
     --val_loss_every 250 \
-    --val_iterations 50 \
-    --inspect_every 500 \
-    --save_every 1000 \
-    --eval_benchmarks_tasks 'hellaswag,swde,fda' \
-    --eval_benchmarks \
+    --val_tokens 10223616 \
+    --save_every 10000 \
+    --no-eval_benchmarks \
     --no-evalpg19 \
     --log_wandb
 
