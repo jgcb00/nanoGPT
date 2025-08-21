@@ -53,7 +53,7 @@ class MixerGatedDeltaNet(nn.Module):
         self.dv = self.head_v_dim
         self.per_head_proj = 2*self.dk + self.dv + 2 # [q k v b a] per head
         in_proj_dim_global = self.n_heads * self.per_head_proj
-        self.in_proj = nn.Linear(self.d_model, in_proj_dim_global, bias=False)
+        self.in_proj = ScaledLinear(config, self.d_model, in_proj_dim_global, bias=False)
 
         # hard coded for now todo
         dt_min = 0.001
