@@ -237,7 +237,6 @@ class MixerGatedDeltaNet(nn.Module):
                 initial_state=h_cache,
                 output_final_state=(cache is not None),
                 cu_seqlens=None,
-                head_first=False,
                 use_qk_l2norm_in_kernel=True
             ) # (b t h d) where d is head_v_dim
         else:
